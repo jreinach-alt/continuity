@@ -63,8 +63,12 @@ spec rather than treated as a deviation.
 ## Recon results (2026-07-09 — device report analyzed)
 
 Owner ran the recon via Task Toolkit on the first try. Full findings in
-the spec's "Recon Findings" section; headline: muOS **2502.0 PIXIE**
-(os-release stale — reads 2410 banana), aarch64/glibc/busybox 1.36.1,
+the spec's "Recon Findings" section; headline: muOS with
+**conflicting version signals** (os-release: 2410 Banana;
+version.txt: 2502.0 Pixie; owner: probably Banana — not updated in a
+while). Owner requirement follows: fleet muOS versions are unknown, so
+the client is **feature-probed, never version-gated** (spec: Version
+Support Policy; acceptance I9). aarch64/glibc/busybox 1.36.1,
 no git/ssh/inotifywait (bundled git + polling daemon, Brick shape),
 **exec-from-SD works** (mount is nosuid,nodev but not noexec), no
 symlinks, `/proc/self/exe` fine, saves per-CORE at

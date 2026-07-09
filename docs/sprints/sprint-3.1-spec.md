@@ -96,10 +96,15 @@ The owner ran the recon via Task Toolkit; the report resolves every
 Phase R blank except the boot hook. Facts (device-measured, not
 assumed):
 
-**Identity.** muOS **2502.0 PIXIE** per `/opt/muos/config/version.txt`
-(`/etc/os-release` says "2410 banana" — STALE; version detection must
-read version.txt, not os-release). Kernel 4.9.170 aarch64, Allwinner
-sun50iw9 (H700), 4× Cortex-A53, 1 GB RAM. Buildroot/glibc userland
+**Identity.** The device reports **conflicting versions about itself**:
+`/etc/os-release` says "2410 banana" while `/opt/muos/config/version.txt`
+says "2502.0_PIXIE". Owner assessment (2026-07-09): probably 2410
+Banana — the device hasn't been updated in a while. Standing
+consequence (owner requirement): **muOS version identity is unreliable
+and fleet versions are unknown — the client supports a RANGE of muOS
+releases and must not version-gate behavior** (see Version Support
+Policy below). Kernel 4.9.170 aarch64, Allwinner sun50iw9 (H700), 4×
+Cortex-A53, 1 GB RAM. Buildroot/glibc userland
 (`ld-linux-aarch64.so.1`), `/bin/sh` → busybox **1.36.1** (same version
 we vendor), 289 applets. Runs as root.
 
@@ -170,6 +175,33 @@ bless a user boot hook. Implementation resolves this in its first
 validation round (preflight dumps `S01muos` + `/opt/muos/script/`), with
 a Task Toolkit "Start Continuity" entry as the guaranteed manual
 fallback from day one; enrollment does not depend on the answer.
+
+## Version Support Policy (owner requirement, 2026-07-09)
+
+Fleet devices may run anything from 2410 Banana through current
+releases, and the device's own version files disagree with each other —
+so the muOS client is **feature-probed, never version-gated** (the same
+philosophy as the vendored-busybox self-test: probe the capability,
+fail open):
+
+- **Paths resolve by existence, with fallback chains.** Saves root:
+  `/run/muos/storage/save/file` if present (the stable indirection on
+  this device), else `/mnt/mmc/MUOS/save/file` directly. Same pattern
+  for states, ROMs (`/mnt/union/ROMS` → `/mnt/mmc/ROMS`), and any other
+  muOS-provided path. The chosen resolution is logged at daemon start
+  and reported by preflight.
+- **Version strings are diagnostics, not switches.** Preflight records
+  BOTH `/etc/os-release` and `/opt/muos/config/version.txt` verbatim
+  (they disagree on the reference device); nothing branches on them.
+- **Layout variants are fixture-tested.** Unit tests run the PAL and
+  scanner against fixture trees for each known layout (with/without the
+  `/run/muos/storage` indirection, task-folder location variants), so
+  cross-version support is proven headlessly — the fleet can't supply
+  one hardware unit per release.
+- **Delivery instructions are probe-first**: the install/enrollment
+  docs tell the user to look for `MUOS/task/` and fall back to the
+  `ARCHIVE`-era locations, rather than asserting one true path per
+  version.
 
 ## Phase I — Implementation (BLOCKED on owner approval)
 
@@ -267,6 +299,11 @@ Implementation phase (after approval):
 - I8. Observability: preflight report at SD root; every on-screen/log
   failure names itself with the build stamp; logs at
   `.continuity/*.log` equivalents.
+- I9. Version Support Policy holds: no code path branches on a muOS
+  version string; every muOS-provided path resolves through an
+  existence-probed fallback chain whose choice is logged; PAL + scanner
+  pass fixture tests for each known layout variant; preflight reports
+  both version signals verbatim.
 
 ## Tests required
 
@@ -301,9 +338,11 @@ Implementation phase (after approval):
    and STOP if it needs core changes.
 2. **Boot hook unknown** — mitigated: Task Toolkit manual start works
    from day one; hook resolved in the first validation round.
-3. **muOS release drift** — device runs 2502.0 PIXIE; version detection
-   must use `/opt/muos/config/version.txt` (`/etc/os-release` is stale
-   on this device). Task locations have moved across releases.
+3. **muOS release drift** — fleet versions are unknown and the
+   reference device's own version files disagree (os-release: 2410
+   Banana; version.txt: 2502.0 Pixie; owner: probably Banana).
+   Mitigated by the Version Support Policy: feature-probe, never
+   version-gate; both strings recorded as diagnostics only.
 4. ~~SD mount noexec~~ RETIRED: exec-from-SD proven on-device.
 5. ~~RetroArch RZIP saves~~ RETIRED for this device
    (`save_file_compression=false`, real saves byte-checked raw) — keep

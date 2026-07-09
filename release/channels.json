@@ -1,7 +1,7 @@
 {
   "_schema_version": "1.0",
   "channels": {
-    "stable": { "commit": "79771461fab645baba81e3d11510ba2176dd8539", "version": "0.1.0-20260707-1747" },
+    "stable": { "commit": "fd849e2cca8d888e5c8a6733e10809a8ce76b390", "version": "0.1.0-20260709-0142" },
     "nightly": { "commit": "fd849e2cca8d888e5c8a6733e10809a8ce76b390", "version": "0.1.0-20260709-0142" }
   }
 }

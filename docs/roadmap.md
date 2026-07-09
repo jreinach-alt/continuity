@@ -352,6 +352,10 @@ to `jreinach-alt/continuity` at Phase 1 complete.
 
 ### Sprint 2.0 — Save-Format Canonicalization (design approved first)
 
+**Status:** Approved 2026-07-09 (Decisions 1A quarantine + 2A
+state-coverage-only) — in progress on `claude/sprint-2.0-canonicalization`.
+Spec: `docs/sprints/sprint-2.0-spec.md`.
+
 **Reference Specs:** `docs/design/save-format-canonicalization.md` +
 `docs/design/nextui-format-matrix.md` (owner-requested research gate,
 completed 2026-07-08: full 4-save × 5-state NextUI option matrix pinned

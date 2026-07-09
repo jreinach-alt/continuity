@@ -302,25 +302,37 @@ implemented sprints (1.1–1.3, 1.6, 1.7, 1.8) and their specs.
 
 ---
 
-### Sprint 1.5 — NextUI Tool PAK
+### Sprint 1.5 — NextUI Tool PAK (conflict UI = reference impl of the UX design)
 
-**Status:** Planned
+**Status:** Planned — **gated on** the Conflict-Resolution Experience
+design (`docs/design/conflict-resolution-experience.md`, Draft 2026-07-09).
+The Brick is the first reference implementation of that platform-agnostic
+design (owner has the device on hand).
 
 **Scope:**
 - Implement `src/platforms/nextui/Continuity.pak/launch.sh` — Tool PAK for sync UI
 - Status display: last sync time, pending changes, linked devices
 - Manual sync trigger
-- Conflict resolution UI (show conflicted saves with device attribution, let user pick)
+- Conflict resolution UI — the Brick realization of the design spec:
+  `src/core/conflict_ui.sh` (shared controller) driven through the NextUI
+  `pal_ui_*` rendering shims (`show2.elf` + `js0`), grouping conflicts by
+  game identity, try/promote flow, `.conflict` schema v2.
 - Unlink device option
 
 **Acceptance Criteria:**
 - PAK appears in Tools menu on device
 - Shows sync status, last sync time
 - Manual sync pushes/pulls immediately
-- Conflict resolution presents all `.local` files with device names
+- Conflict resolution presents conflicted games with device attribution,
+  supports try-before-commit, and honors every guard in the design's §4
+  state machine (headless-tested via the test PAL, hardware-validated on
+  the Brick)
 - Unlink removes device registration and clears credentials
 
-**Dependencies:** Sprint 1.4 (full daemon running)
+**Dependencies:** Sprint 1.4 (full daemon running); the Conflict-Resolution
+Experience design (approved).
+
+**Reference Specs:** `docs/design/conflict-resolution-experience.md`
 
 ---
 
@@ -410,7 +422,7 @@ New PAL implementation + enrollment trigger. Nearly identical to NextUI. Differe
 
 ### Sprint 3.2 — Android Client (outline)
 
-Java/Kotlin app implementing the PAL interface natively. JGit for git operations. `FileObserver` for change detection. Material UI for status and conflict resolution.
+Java/Kotlin app implementing the PAL interface natively. JGit for git operations. `FileObserver` for change detection. Material UI for status and conflict resolution. The conflict UI is the **native reimplementation** of the Conflict-Resolution Experience design (`docs/design/conflict-resolution-experience.md`): same on-repo `.conflict`/`.local`/trying artifacts and the same §4 resolution guards, in Kotlin rather than the shared shell controller. (Owner's Ayn Thor is the available validation device.)
 
 ---
 

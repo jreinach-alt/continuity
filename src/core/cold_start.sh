@@ -145,11 +145,20 @@ cs_run() {
                     break
                 fi
 
-                # Write .conflict metadata
-                local timestamp
+                # Write .conflict metadata (schema v2, design §3). Cold-start
+                # preservation has no remote counterpart device, so remote_*
+                # is nullable (unknown/empty) — keep_newest already refuses to
+                # guess on a missing timestamp. identity groups a game's
+                # .srm/.sav + .rtc; class is the save class (rtc, else srm).
+                local timestamp cs_identity cs_class
                 timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
-                printf '{\n  "canonical": "%s",\n  "local_device": "%s",\n  "timestamp": "%s",\n  "source": "cold_start"\n}\n' \
-                    "$repo_path" "$CONTINUITY_DEVICE_NAME" "$timestamp" > "$repo_dir/$repo_path.conflict"
+                cs_identity=$(printf '%s' "$repo_path" | sed 's/\.srm$//; s/\.sav$//; s/\.rtc$//')
+                case "$repo_path" in
+                    *.rtc) cs_class="rtc" ;;
+                    *)     cs_class="srm" ;;
+                esac
+                printf '{\n  "_schema_version": "2.0",\n  "file": "%s",\n  "identity": "%s",\n  "class": "%s",\n  "remote_device": "unknown",\n  "remote_timestamp": "",\n  "local_device": "%s",\n  "local_timestamp": "%s",\n  "source": "cold_start",\n  "status": "unresolved"\n}\n' \
+                    "$repo_path" "$cs_identity" "$cs_class" "$CONTINUITY_DEVICE_NAME" "$timestamp" > "$repo_dir/$repo_path.conflict"
 
                 # Accumulate conflict artifact paths
                 printf '%s\n%s\n' "$conflict_name" "$repo_path.conflict" >> "$conflict_tmp"

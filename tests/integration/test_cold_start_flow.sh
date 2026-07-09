@@ -158,7 +158,9 @@ assert_eq "super_metroid .local has device version" "device_metroid" "$sm_local"
 # 4. .conflict metadata exists
 assert_file_exists "super_metroid .conflict exists" "$REPO/snes/super_metroid.srm.conflict"
 conflict_json=$(cat "$REPO/snes/super_metroid.srm.conflict")
-assert_contains ".conflict has canonical" "$conflict_json" '"canonical": "snes/super_metroid.srm"'
+assert_contains ".conflict has _schema_version" "$conflict_json" '"_schema_version": "2.0"'
+assert_contains ".conflict has file" "$conflict_json" '"file": "snes/super_metroid.srm"'
+assert_contains ".conflict has identity" "$conflict_json" '"identity": "snes/super_metroid"'
 assert_contains ".conflict has source" "$conflict_json" '"source": "cold_start"'
 
 # 5. minish_cap on device unchanged (identical)

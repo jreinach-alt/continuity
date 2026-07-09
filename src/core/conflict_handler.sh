@@ -57,15 +57,28 @@ ch_preserve_conflict() {
     local local_timestamp
     local_timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || local_timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
 
+    # Derive the game-group identity and save-class (schema v2, design §3).
+    # identity = the canonical path with its save-class extension stripped,
+    # so a game's .srm/.sav and .rtc share one identity and resolve as a
+    # unit. class is the save CLASS, not the file extension: rtc for .rtc,
+    # else srm (the SRAM class, covering both .srm and the Brick's .sav).
+    local identity class
+    identity=$(printf '%s' "$repo_path" | sed 's/\.srm$//; s/\.sav$//; s/\.rtc$//')
+    case "$repo_path" in
+        *.rtc) class="rtc" ;;
+        *)     class="srm" ;;
+    esac
+
     # Escape double quotes in values
-    local esc_file esc_remote_device esc_device_name
+    local esc_file esc_identity esc_remote_device esc_device_name
     esc_file=$(printf '%s' "$repo_path" | sed 's/"/\\"/g')
+    esc_identity=$(printf '%s' "$identity" | sed 's/"/\\"/g')
     esc_remote_device=$(printf '%s' "$remote_device" | sed 's/"/\\"/g')
     esc_device_name=$(printf '%s' "$device_name" | sed 's/"/\\"/g')
 
-    # Write .conflict JSON
-    if ! printf '{\n  "_schema_version": "1.0",\n  "file": "%s",\n  "remote_device": "%s",\n  "remote_timestamp": "%s",\n  "local_device": "%s",\n  "local_timestamp": "%s",\n  "status": "unresolved"\n}\n' \
-        "$esc_file" "$esc_remote_device" "$remote_timestamp" "$esc_device_name" "$local_timestamp" \
+    # Write .conflict JSON (schema v2 — the standard; no back-compat reader)
+    if ! printf '{\n  "_schema_version": "2.0",\n  "file": "%s",\n  "identity": "%s",\n  "class": "%s",\n  "remote_device": "%s",\n  "remote_timestamp": "%s",\n  "local_device": "%s",\n  "local_timestamp": "%s",\n  "source": "pull",\n  "status": "unresolved"\n}\n' \
+        "$esc_file" "$esc_identity" "$class" "$esc_remote_device" "$remote_timestamp" "$esc_device_name" "$local_timestamp" \
         > "$conflict_meta"; then
         pal_log "error" "ch_preserve_conflict: write failed for $conflict_meta"
         return 1
@@ -468,13 +481,16 @@ ch_get_conflict_info() {
         return 1
     fi
 
-    # Parse JSON fields
+    # Parse JSON fields (schema v2)
     local remote_device remote_timestamp local_device local_timestamp status
+    local identity class
     remote_device=$(grep '"remote_device"' "$conflict_file" | sed 's/.*: *"\([^"]*\)".*/\1/')
     remote_timestamp=$(grep '"remote_timestamp"' "$conflict_file" | sed 's/.*: *"\([^"]*\)".*/\1/')
     local_device=$(grep '"local_device"' "$conflict_file" | sed 's/.*: *"\([^"]*\)".*/\1/')
     local_timestamp=$(grep '"local_timestamp"' "$conflict_file" | sed 's/.*: *"\([^"]*\)".*/\1/')
     status=$(grep '"status"' "$conflict_file" | sed 's/.*: *"\([^"]*\)".*/\1/')
+    identity=$(grep '"identity"' "$conflict_file" | sed 's/.*: *"\([^"]*\)".*/\1/')
+    class=$(grep '"class"' "$conflict_file" | sed 's/.*: *"\([^"]*\)".*/\1/')
 
     # Validate required fields
     if [ -z "$remote_device" ] || [ -z "$local_device" ] || [ -z "$status" ]; then
@@ -486,6 +502,17 @@ ch_get_conflict_info() {
     local system game
     system=$(printf '%s' "$repo_path" | sed 's|/.*||')
     game=$(printf '%s' "$repo_path" | sed 's|.*/||; s|\.srm$||; s|\.sav$||; s|\.rtc$||')
+
+    # identity/class are v2 fields; fall back to deriving them from the path
+    # if an older reader ever hands us a file without them (defense only —
+    # every producer now writes v2).
+    [ -z "$identity" ] && identity=$(printf '%s' "$repo_path" | sed 's/\.srm$//; s/\.sav$//; s/\.rtc$//')
+    if [ -z "$class" ]; then
+        case "$repo_path" in
+            *.rtc) class="rtc" ;;
+            *)     class="srm" ;;
+        esac
+    fi
 
     # Determine active_version and trying_modified
     local active_version trying_modified
@@ -504,6 +531,8 @@ ch_get_conflict_info() {
     fi
 
     printf 'file=%s\n' "$repo_path"
+    printf 'identity=%s\n' "$identity"
+    printf 'class=%s\n' "$class"
     printf 'system=%s\n' "$system"
     printf 'game=%s\n' "$game"
     printf 'remote_device=%s\n' "$remote_device"

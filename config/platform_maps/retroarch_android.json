@@ -1,0 +1,24 @@
+{
+  "_schema_version": "1.0",
+  "_description": "Path mapping for Android devices running RetroArch.",
+  "platform": "retroarch_android",
+  "device_family": "android",
+  "saves_root": "/storage/emulated/0/RetroArch/saves",
+  "system_paths": {
+    "gb": "Nintendo - Game Boy",
+    "gbc": "Nintendo - Game Boy Color",
+    "gba": "Nintendo - Game Boy Advance",
+    "nes": "Nintendo - Nintendo Entertainment System",
+    "snes": "Nintendo - Super Nintendo Entertainment System",
+    "genesis": "Sega - Mega Drive - Genesis",
+    "sms": "Sega - Master System - Mark III",
+    "gg": "Sega - Game Gear",
+    "pce": "NEC - PC Engine - TurboGrafx 16",
+    "ps1": "Sony - PlayStation",
+    "n64": "Nintendo - Nintendo 64",
+    "nds": "Nintendo - Nintendo DS",
+    "psp": "Sony - PlayStation Portable",
+    "arcade": "FBNeo - Arcade Games"
+  },
+  "save_extension": ".srm"
+}

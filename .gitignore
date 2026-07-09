@@ -1,0 +1,24 @@
+# Build and release artifacts
+release/artifacts/
+
+# Ephemeral working artifacts (reviews, audits, scratch notes)
+work/
+
+# Temporary files
+tmp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Build output (intermediate artifacts)
+build/*
+!build/Continuity.pak/

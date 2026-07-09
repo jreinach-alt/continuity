@@ -1,0 +1,104 @@
+{
+  "_schema_version": "1.0",
+  "_description": "Canonical system names for Continuity save sync. The 'canonical' name is used in the git repo directory structure. Aliases map platform-specific directory names to the canonical name.",
+  "systems": [
+    {
+      "canonical": "gb",
+      "display_name": "Game Boy",
+      "aliases": ["GB", "Game Boy", "gameboy"],
+      "srm_size_typical_kb": 32,
+      "srm_size_max_kb": 128
+    },
+    {
+      "canonical": "gbc",
+      "display_name": "Game Boy Color",
+      "aliases": ["GBC", "Game Boy Color", "gameboy_color"],
+      "srm_size_typical_kb": 32,
+      "srm_size_max_kb": 128
+    },
+    {
+      "canonical": "gba",
+      "display_name": "Game Boy Advance",
+      "aliases": ["GBA", "Game Boy Advance", "gameboy_advance"],
+      "srm_size_typical_kb": 64,
+      "srm_size_max_kb": 128
+    },
+    {
+      "canonical": "nes",
+      "display_name": "NES",
+      "aliases": ["NES", "FC", "Famicom", "famicom"],
+      "srm_size_typical_kb": 8,
+      "srm_size_max_kb": 8
+    },
+    {
+      "canonical": "snes",
+      "display_name": "SNES",
+      "aliases": ["SNES", "SFC", "Super Famicom", "super_famicom"],
+      "srm_size_typical_kb": 16,
+      "srm_size_max_kb": 32
+    },
+    {
+      "canonical": "genesis",
+      "display_name": "Sega Genesis",
+      "aliases": ["MD", "Mega Drive", "Genesis", "megadrive", "genesis"],
+      "srm_size_typical_kb": 8,
+      "srm_size_max_kb": 16
+    },
+    {
+      "canonical": "sms",
+      "display_name": "Sega Master System",
+      "aliases": ["SMS", "MS", "Master System", "master_system"],
+      "srm_size_typical_kb": 8,
+      "srm_size_max_kb": 32
+    },
+    {
+      "canonical": "gg",
+      "display_name": "Game Gear",
+      "aliases": ["GG", "Game Gear", "gamegear"],
+      "srm_size_typical_kb": 8,
+      "srm_size_max_kb": 32
+    },
+    {
+      "canonical": "pce",
+      "display_name": "PC Engine",
+      "aliases": ["PCE", "PC Engine", "TurboGrafx", "TurboGrafx-16", "tg16"],
+      "srm_size_typical_kb": 8,
+      "srm_size_max_kb": 32
+    },
+    {
+      "canonical": "ps1",
+      "display_name": "PlayStation",
+      "aliases": ["PS", "PSX", "PS1", "PlayStation"],
+      "srm_size_typical_kb": 128,
+      "srm_size_max_kb": 128
+    },
+    {
+      "canonical": "n64",
+      "display_name": "Nintendo 64",
+      "aliases": ["N64", "Nintendo 64"],
+      "srm_size_typical_kb": 32,
+      "srm_size_max_kb": 128
+    },
+    {
+      "canonical": "nds",
+      "display_name": "Nintendo DS",
+      "aliases": ["NDS", "DS", "Nintendo DS"],
+      "srm_size_typical_kb": 64,
+      "srm_size_max_kb": 512
+    },
+    {
+      "canonical": "psp",
+      "display_name": "PlayStation Portable",
+      "aliases": ["PSP"],
+      "srm_size_typical_kb": 128,
+      "srm_size_max_kb": 2048
+    },
+    {
+      "canonical": "arcade",
+      "display_name": "Arcade",
+      "aliases": ["ARCADE", "FBN", "FBA", "MAME", "fbneo"],
+      "srm_size_typical_kb": 8,
+      "srm_size_max_kb": 64
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+#!/bin/sh
+# Continuity pre-push hook — tier-selecting wrapper over scripts/gate.sh.
+#
+# Ordinary pushes run the FAST gate (~15s: CRLF + shellcheck). The FULL
+# gate (~4min: both suite passes + shipped-PAK integrity) auto-escalates
+# when the pushed range touches build/Continuity.pak — pre-merge, the
+# deployed device's legacy OTA channel follows this branch's head, so a
+# PAK-bearing push is a device delivery and gets device-delivery rigor.
+#
+# Overrides:
+#   CONTINUITY_GATE=full git push    force the full gate
+#   CONTINUITY_GATE=fast git push    force fast even for PAK pushes
+#   CONTINUITY_SKIP_HOOK=1 git push  bypass entirely (emergencies; say so)
+set -e
+
+if [ "${CONTINUITY_SKIP_HOOK:-0}" = "1" ]; then
+    printf 'pre-push: CONTINUITY_SKIP_HOOK=1 — gate BYPASSED\n' >&2
+    exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+TIER="${CONTINUITY_GATE:-}"
+if [ -z "$TIER" ]; then
+    TIER=fast
+    ZERO=0000000000000000000000000000000000000000
+    # stdin: <local_ref> <local_sha> <remote_ref> <remote_sha> per ref
+    while read -r _ local_sha _ remote_sha; do
+        [ -n "$local_sha" ] || continue
+        [ "$local_sha" = "$ZERO" ] && continue   # branch deletion
+        if [ "$remote_sha" = "$ZERO" ]; then
+            # brand-new remote branch: no range to inspect — be safe
+            TIER=full
+            break
+        fi
+        if ! git diff --quiet "$remote_sha".."$local_sha" -- build/Continuity.pak 2>/dev/null; then
+            printf 'pre-push: push carries PAK changes (device-consequential) — full gate\n'
+            TIER=full
+            break
+        fi
+    done
+fi
+
+exec sh scripts/gate.sh "$TIER"

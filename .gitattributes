@@ -1,0 +1,36 @@
+# Force LF on every checkout so PAK contents don't get CRLF-corrupted on
+# Windows (which is fatal — NextUI's kernel reads `#!/bin/sh\r` as the
+# interpreter path and exec fails silently).
+* text=auto eol=lf
+
+# Explicit overrides for shell scripts and PAK assets: they MUST be LF.
+*.sh        text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.cfg       text eol=lf
+
+# Binaries — don't ever touch.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gz        binary
+*.tar       binary
+*.tgz       binary
+*.zip       binary
+*.elf       binary
+*.so        binary
+*.pakz      binary
+
+# The bundled git binary, its extensionless https helper programs, and
+# the CA bundle (PEM is text, but nothing may ever rewrite its bytes).
+# Path-anchored so they're unambiguous.
+build/Continuity.pak/bin/git                    binary
+build/Continuity.pak/bin/busybox                binary
+build/Continuity.pak/libexec/**                 binary
+build/Continuity.pak/share/ca-bundle.crt        binary
+build/git.preserved                             binary
+build/git-remote-https.preserved                binary
+build/busybox.preserved                         binary
+build/ca-bundle.preserved                       binary
+tests/fixtures/rzip/*.bin                       binary

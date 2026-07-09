@@ -1,0 +1,61 @@
+# Saves digest — daily email brief for a Continuity saves repo.
+#
+# INSTALL (in your SAVES repo, not the Continuity project repo):
+#   1. Copy this file to           .github/workflows/saves-digest.yml
+#   2. Copy build_digest.sh to     .github/scripts/build_digest.sh
+#   3. Done. No secrets, no SMTP: the digest is filed as a GitHub
+#      issue, and GitHub's own notification system emails it to you
+#      (you auto-watch your own repos; check Settings → Notifications
+#      → "Email" is enabled for watching).
+#
+# Fires daily but only files an issue on days where saves, states, or
+# conflict artifacts were actually archived. Yesterday's digest issue
+# is closed when a new one is filed, so exactly one is ever open.
+# Trigger a test run any time from the Actions tab (workflow_dispatch).
+
+name: Saves digest
+
+on:
+  schedule:
+    # 13:00 UTC ≈ morning in the US. Adjust to taste.
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a shallow default checkout would hide the
+          # very commits the digest is about.
+          fetch-depth: 0
+
+      - name: Build digest
+        id: build
+        run: |
+          if sh .github/scripts/build_digest.sh digest.md; then
+            echo "has_digest=1" >> "$GITHUB_OUTPUT"
+            cat digest.md
+          else
+            echo "has_digest=0" >> "$GITHUB_OUTPUT"
+            echo "No save activity in the last 24h — no digest."
+          fi
+
+      - name: File digest issue (GitHub emails it to you)
+        if: steps.build.outputs.has_digest == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Close the previous digest so exactly one stays open
+          gh issue list --state open --search 'in:title "Saves archived"' \
+              --json number --jq '.[].number' | while read -r n; do
+            gh issue close "$n" --comment "Superseded by today's digest." || true
+          done
+          gh issue create \
+            --title "Saves archived — $(date -u '+%Y-%m-%d')" \
+            --body-file digest.md

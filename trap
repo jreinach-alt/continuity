@@ -1,0 +1,3 @@
+KEEP: /tmp/tmp.dfPkSv
+KEEP: rm -rf "$TEST_TMPDIR"
+KEEP: EXIT2

@@ -1,0 +1,24 @@
+{
+  "_schema_version": "1.0",
+  "_description": "Path mapping for TrimUI Brick running NextUI. Maps canonical system names to local save directories.",
+  "platform": "nextui",
+  "device_family": "trimui_brick",
+  "saves_root": "/mnt/SDCARD/Saves",
+  "system_paths": {
+    "gb": "GB",
+    "gbc": "GBC",
+    "gba": "GBA",
+    "nes": "FC",
+    "snes": "SFC",
+    "genesis": "MD",
+    "sms": "MS",
+    "gg": "GG",
+    "pce": "PCE",
+    "ps1": "PS",
+    "n64": "N64",
+    "nds": "NDS",
+    "psp": "PSP",
+    "arcade": "ARCADE"
+  },
+  "save_extension": ".srm"
+}

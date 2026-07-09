@@ -1,0 +1,367 @@
+#ifndef __CONFIG_H__
+#define __CONFIG_H__
+
+#include <stdint.h>
+#include <stdbool.h>
+
+// portability, deprecated
+extern uint32_t THEME_COLOR1_255;
+extern uint32_t THEME_COLOR2_255;
+extern uint32_t THEME_COLOR3_255;
+extern uint32_t THEME_COLOR4_255;
+extern uint32_t THEME_COLOR5_255;
+extern uint32_t THEME_COLOR6_255;
+extern uint32_t THEME_COLOR7_255;
+
+// Read-only interface for minui.c usage
+// Read/Write interface for settings.cpp usage
+
+typedef int (*FontLoad_callback_t)(const char* path);
+typedef int (*ColorSet_callback_t)(void);
+
+enum
+{
+	// MinUI: Game.gba.sav
+	SAVE_FORMAT_SAV,
+	//Retroarch: Game.srm
+	SAVE_FORMAT_SRM,
+	// Generic: Game.sav
+	SAVE_FORMAT_GEN,
+	//Retroarch: Game.srm
+	SAVE_FORMAT_SRM_UNCOMPRESSED
+};
+
+enum
+{
+	// MinUI: Game.st0
+	STATE_FORMAT_SAV,
+	//Retroarch-ish: Game.state.<n> (a typo, but keeping it to avoid a breaking change)
+	STATE_FORMAT_SRM_EXTRADOT,
+	//Retroarch-ish: Game.state.<n> (a typo, but keeping it to avoid a breaking change)
+	STATE_FORMAT_SRM_UNCOMRESSED_EXTRADOT,
+	//Retroarch: Game.state<n>
+	STATE_FORMAT_SRM,
+	//Retroarch: Game.state<n>
+	STATE_FORMAT_SRM_UNCOMRESSED
+};
+
+enum {
+	// actual views
+	SCREEN_GAMELIST,
+	SCREEN_GAMESWITCHER,
+	SCREEN_QUICKMENU,
+	// meta
+	SCREEN_GAME,
+	SCREEN_OFF
+};
+
+// Achievement sort order options
+enum {
+	RA_SORT_UNLOCKED_FIRST,
+	RA_SORT_DISPLAY_ORDER_FIRST,
+	RA_SORT_DISPLAY_ORDER_LAST,
+	RA_SORT_WON_BY_MOST,
+	RA_SORT_WON_BY_LEAST,
+	RA_SORT_POINTS_MOST,
+	RA_SORT_POINTS_LEAST,
+	RA_SORT_TITLE_AZ,
+	RA_SORT_TITLE_ZA,
+	RA_SORT_TYPE_ASC,
+	RA_SORT_TYPE_DESC,
+	RA_SORT_COUNT
+};
+
+typedef struct
+{
+	// Theme
+	int font;
+	uint32_t color1_255; // not screen mapped
+	uint32_t color2_255; // not screen mapped
+	uint32_t color3_255; // not screen mapped
+	uint32_t color4_255; // not screen mapped
+	uint32_t color5_255; // not screen mapped
+	uint32_t color6_255; // not screen mapped
+	uint32_t color7_255; // not screen mapped
+	int thumbRadius;
+	int gameSwitcherScaling; // enum
+	double gameArtWidth;	 // [0,1] -> 0-100% of screen width
+
+	// font loading/unloading callback
+    FontLoad_callback_t onFontChange;
+
+    // color update callback
+    ColorSet_callback_t onColorSet;
+
+    // UI
+	bool showClock;
+	bool clock24h;
+	bool showBatteryPercent;
+	bool showMenuAnimations;
+	bool showMenuTransitions;
+	bool showRecents;
+	bool showTools;
+	bool showCollections;
+	bool showGameArt;
+	bool showFolderNamesAtRoot;
+	bool romsUseFolderBackground;
+	bool showQuickSwitcherUi;
+	int defaultView;
+
+	// Mute switch
+	bool muteLeds;
+
+	// Power
+	uint32_t screenTimeoutSecs;
+	uint32_t suspendTimeoutSecs;
+	bool powerOffProtection;
+
+	// Emulator
+	int saveFormat;
+	int stateFormat;
+	bool useExtractedFileName;
+
+	// Haptic
+	bool haptics;
+	
+	// Networking
+	bool ntp;
+	int currentTimezone; // index of timezone in tz database
+	bool wifi;
+	bool wifiDiagnostics;
+	bool bluetooth;
+	bool bluetoothDiagnostics;
+	int bluetoothSamplerateLimit;
+
+	// Notifications
+	bool notifyManualSave;
+	bool notifyLoad;
+	bool notifyScreenshot;
+	bool notifyAdjustments;
+	int notifyDuration;
+
+	// RetroAchievements
+	bool raEnable;
+	char raUsername[64];
+	char raPassword[128];
+	bool raHardcoreMode;
+	char raToken[64];           // API token (stored after successful auth)
+	bool raAuthenticated;       // Whether we have a valid token
+	bool raShowNotifications;   // Show achievement unlock notifications
+	int raNotificationDuration; // Duration for achievement notifications (1-5 seconds)
+	int raProgressNotificationDuration; // Duration for progress notifications (0-5 seconds, 0 = disabled)
+	int raAchievementSortOrder; // Sort order for achievements list (RA_SORT_* enum)
+
+} NextUISettings;
+
+#define CFG_DEFAULT_FONT_ID 1  // Next
+#define CFG_DEFAULT_COLOR1 0xffffffU
+#define CFG_DEFAULT_COLOR2 0x9b2257U
+#define CFG_DEFAULT_COLOR3 0x1e2329U
+#define CFG_DEFAULT_COLOR4 0xffffffU
+#define CFG_DEFAULT_COLOR5 0x000000U
+#define CFG_DEFAULT_COLOR6 0xffffffU
+#define CFG_DEFAULT_COLOR7 0x000000U
+#define CFG_DEFAULT_THUMBRADIUS 20 // unscaled!
+#define CFG_DEFAULT_SHOWCLOCK false
+#define CFG_DEFAULT_CLOCK24H true
+#define CFG_DEFAULT_SHOWBATTERYPERCENT false
+#define CFG_DEFAULT_SHOWMENUANIMATIONS true
+#define CFG_DEFAULT_SHOWMENUTRANSITIONS true
+#define CFG_DEFAULT_SHOWRECENTS true
+#define CFG_DEFAULT_SHOWCOLLECTIONS true
+#define CFG_DEFAULT_SHOWGAMEART true
+#define CFG_DEFAULT_SHOWFOLDERNAMESATROOT true
+#define CFG_DEFAULT_GAMESWITCHERSCALING GFX_SCALE_FULLSCREEN
+#define CFG_DEFAULT_SCREENTIMEOUTSECS 60
+#define CFG_DEFAULT_SUSPENDTIMEOUTSECS 30
+#define CFG_DEFAULT_POWEROFFPROTECTION true
+#define CFG_DEFAULT_HAPTICS false
+#define CFG_DEFAULT_ROMSUSEFOLDERBACKGROUND true
+#define CFG_DEFAULT_SAVEFORMAT SAVE_FORMAT_SAV
+#define CFG_DEFAULT_STATEFORMAT STATE_FORMAT_SAV
+#define CFG_DEFAULT_EXTRACTEDFILENAME false
+#define CFG_DEFAULT_MUTELEDS false
+#define CFG_DEFAULT_GAMEARTWIDTH 0.45
+#define CFG_DEFAULT_WIFI false
+#define CFG_DEFAULT_VIEW SCREEN_GAMELIST
+#define CFG_DEFAULT_SHOWQUICKWITCHERUI true
+#define CFG_DEFAULT_WIFI_DIAG false
+#define CFG_DEFAULT_SHOWTOOLS true
+#define CFG_DEFAULT_BLUETOOTH false
+#define CFG_DEFAULT_BLUETOOTH_DIAG false
+#define CFG_DEFAULT_BLUETOOTH_MAXRATE 48000
+#define CFG_DEFAULT_NTP false
+#define CFG_DEFAULT_TIMEZONE 320 // Europe/Berlin
+
+// Notification defaults
+#define CFG_DEFAULT_NOTIFY_MANUAL_SAVE true
+#define CFG_DEFAULT_NOTIFY_LOAD true
+#define CFG_DEFAULT_NOTIFY_SCREENSHOT true
+#define CFG_DEFAULT_NOTIFY_ADJUSTMENTS true
+#define CFG_DEFAULT_NOTIFY_DURATION 1
+
+// RetroAchievements defaults
+#define CFG_DEFAULT_RA_ENABLE false
+#define CFG_DEFAULT_RA_USERNAME ""
+#define CFG_DEFAULT_RA_PASSWORD ""
+#define CFG_DEFAULT_RA_HARDCOREMODE false
+#define CFG_DEFAULT_RA_TOKEN ""
+#define CFG_DEFAULT_RA_AUTHENTICATED false
+#define CFG_DEFAULT_RA_SHOW_NOTIFICATIONS true
+#define CFG_DEFAULT_RA_NOTIFICATION_DURATION 3
+#define CFG_DEFAULT_RA_PROGRESS_NOTIFICATION_DURATION 1
+#define CFG_DEFAULT_RA_ACHIEVEMENT_SORT_ORDER RA_SORT_UNLOCKED_FIRST
+
+void CFG_init(FontLoad_callback_t fontCallback, ColorSet_callback_t ccb);
+void CFG_print(void);
+void CFG_get(const char *key, char * value);
+// void CFG_defaults(NextUISettings*);
+//  The font id to use as the UI font.
+//  0 - Default MinUI font
+//  1 - Default NextUI font (default)
+int CFG_getFontId(void);
+void CFG_setFontId(int fontid);
+// The colors to use for the UI. These are 0xRRGGBB values.
+// 0 - Color1 (primary hint/asset colour)
+// 1 - Color2 (accent colour)
+// 2 - Color3 (secondary accent colour
+// 3 - Background Color (unused)
+uint32_t CFG_getColor(int id);
+void CFG_setColor(int id, uint32_t color);
+// Time in secs before the device enters screen-off mode.
+uint32_t CFG_getScreenTimeoutSecs(void);
+void CFG_setScreenTimeoutSecs(uint32_t secs);
+// Time in secs before the device enters suspend mode (aka deep sleep).
+uint32_t CFG_getSuspendTimeoutSecs(void);
+void CFG_setSuspendTimeoutSecs(uint32_t secs);
+// Enable/disable PMIC power-off protection mode.
+bool CFG_getPowerOffProtection(void);
+void CFG_setPowerOffProtection(bool enable);
+// Show/hide clock in the status pill.
+bool CFG_getShowClock(void);
+void CFG_setShowClock(bool show);
+// Sets the time format to 12/24hrs.
+bool CFG_getClock24H(void);
+void CFG_setClock24H(bool);
+// Show/hide battery percentage in the status pill.
+bool CFG_getShowBatteryPercent(void);
+void CFG_setShowBatteryPercent(bool show);
+// Show/hide menu animations in main menu.
+bool CFG_getMenuAnimations(void);
+void CFG_setMenuAnimations(bool show);
+// Show/hide menu transitions between screens in main menu.
+bool CFG_getMenuTransitions(void);
+void CFG_setMenuTransitions(bool show);
+// Set thumbnail rounding radius.
+int CFG_getThumbnailRadius(void);
+void CFG_setThumbnailRadius(int radius);
+// Show/hide recently played in the main menu.
+bool CFG_getShowRecents(void);
+void CFG_setShowRecents(bool show);
+// Show/hide tools folder in the main menu.
+bool CFG_getShowTools(void);
+void CFG_setShowTools(bool show);
+// Show/hide collections in the main menu.
+bool CFG_getShowCollections(void);
+void CFG_setShowCollections(bool show);
+// Show/hide game art in the main menu.
+bool CFG_getShowGameArt(void);
+void CFG_setShowGameArt(bool show);
+// Use folder background or default background for roms
+bool CFG_getRomsUseFolderBackground(void);
+void CFG_setRomsUseFolderBackground(bool);
+// The scaling algorithm used for the game switcher preview image.
+int CFG_getGameSwitcherScaling(void);
+void CFG_setGameSwitcherScaling(int enumValue);
+// Enable/disable haptics.
+bool CFG_getHaptics(void);
+void CFG_setHaptics(bool enable);
+// Save format to use for libretro cores
+// 0 - .sav
+// 1 - .srm (compressed rzip)
+int CFG_getSaveFormat(void);
+void CFG_setSaveFormat(int);
+// Save state format to use for libretro cores
+// 0 - .st0
+// 1 - .state.<n> (compressed rzip)
+int CFG_getStateFormat(void);
+void CFG_setStateFormat(int);
+// use extracted file name instead of archive name (for cores that do not support archives natively)
+bool CFG_getUseExtractedFileName(void);
+void CFG_setUseExtractedFileName(bool);
+// Enable/disable mute also shutting off LEDs.
+bool CFG_getMuteLEDs(void);
+void CFG_setMuteLEDs(bool);
+// Set game art width percentage.
+double CFG_getGameArtWidth(void);
+void CFG_setGameArtWidth(double zeroToOne);
+// Show/hide folder names at root directory.
+bool CFG_getShowFolderNamesAtRoot(void);
+void CFG_setShowFolderNamesAtRoot(bool show);
+// WiFi on/off (if available)
+bool CFG_getWifi(void);
+void CFG_setWifi(bool on);
+// Default view on boot
+int CFG_getDefaultView(void);
+void CFG_setDefaultView(int view);
+// Quick switcher UI painting on/off
+bool CFG_getShowQuickswitcherUI(void);
+void CFG_setShowQuickswitcherUI(bool on);
+// WiFi diagnostic logging on/off
+bool CFG_getWifiDiagnostics(void);
+void CFG_setWifiDiagnostics(bool on);
+// Bluetooth on/off (if available)
+bool CFG_getBluetooth(void);
+void CFG_setBluetooth(bool on);
+// BT diagnostic logging on/off
+bool CFG_getBluetoothDiagnostics(void);
+void CFG_setBluetoothDiagnostics(bool on);
+// BT maximum sample rate to request
+int CFG_getBluetoothSamplingrateLimit(void);
+void CFG_setBluetoothSamplingrateLimit(int value);
+// NTP on/off
+bool CFG_getNTP(void);
+// \note this will only apply after reboot, unless you set it through PLAT_setNetworkTimeSync
+void CFG_setNTP(bool on);
+// Current timezone index in tz database
+int CFG_getCurrentTimezone(void);
+void CFG_setCurrentTimezone(int index);
+
+// Notification settings
+bool CFG_getNotifyManualSave(void);
+void CFG_setNotifyManualSave(bool enable);
+bool CFG_getNotifyLoad(void);
+void CFG_setNotifyLoad(bool enable);
+bool CFG_getNotifyScreenshot(void);
+void CFG_setNotifyScreenshot(bool enable);
+bool CFG_getNotifyAdjustments(void);
+void CFG_setNotifyAdjustments(bool enable);
+int CFG_getNotifyDuration(void);
+void CFG_setNotifyDuration(int seconds);
+
+// RetroAchievements settings
+bool CFG_getRAEnable(void);
+void CFG_setRAEnable(bool enable);
+const char* CFG_getRAUsername(void);
+void CFG_setRAUsername(const char* username);
+const char* CFG_getRAPassword(void);
+void CFG_setRAPassword(const char* password);
+bool CFG_getRAHardcoreMode(void);
+void CFG_setRAHardcoreMode(bool enable);
+const char* CFG_getRAToken(void);
+void CFG_setRAToken(const char* token);
+bool CFG_getRAAuthenticated(void);
+void CFG_setRAAuthenticated(bool authenticated);
+bool CFG_getRAShowNotifications(void);
+void CFG_setRAShowNotifications(bool show);
+int CFG_getRANotificationDuration(void);
+void CFG_setRANotificationDuration(int seconds);
+int CFG_getRAProgressNotificationDuration(void);
+void CFG_setRAProgressNotificationDuration(int seconds);
+int CFG_getRAAchievementSortOrder(void);
+void CFG_setRAAchievementSortOrder(int sortOrder);
+
+void CFG_sync(void);
+void CFG_quit(void);
+
+#endif

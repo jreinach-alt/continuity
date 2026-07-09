@@ -60,6 +60,21 @@ shipped-artifact integrity) is required at PAK-bearing pushes, channel
 publishes, PR creation, and session closeout. There is no remote CI —
 feedback is synchronous and local, by design.
 
+## Provenance
+
+Continuity began as **Ideal OS**, an appliance-style operating system for
+the TrimUI Brick. Building a whole OS was the wrong scope; the piece worth
+shipping was the one thing nothing else did well — *never lose a save*.
+This repository is that product, reseeded from a single root commit that
+carries the Phase 1 tree byte-for-byte.
+
+The full engineering record — sprints 0.1–1.9, the original pull requests,
+field notes, and defect history — lives in the archived source repo:
+[jreinach-alt/ideal_os](https://github.com/jreinach-alt/ideal_os). It stays
+public and read-only forever, so a device that missed the migration window
+still self-heals from its frozen release manifest (see
+[release/README.md](release/README.md)).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

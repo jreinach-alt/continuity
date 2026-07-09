@@ -324,6 +324,28 @@ implemented sprints (1.1–1.3, 1.6, 1.7, 1.8) and their specs.
 
 ---
 
+### Sprint 1.9 — Repo Migration (ideal_os → continuity)
+
+**Status:** Complete — the project's home moved from `jreinach-alt/ideal_os`
+to `jreinach-alt/continuity` at Phase 1 complete.
+
+**Scope:**
+- Seeded `continuity` from a single root commit carrying the Phase 1 tree
+  byte-identical to the `ideal_os` handoff merge (`commit-tree` from that
+  merge's tree — same bytes by construction, new SHA universe).
+- Handoff build: the NextUI updater's `OTA_URL` default and preflight probe
+  repoint to continuity, and `ota_ensure_repo` reconciles a cached clone's
+  `origin` so deployed devices repoint on an ordinary OTA (not just fresh
+  installs), riding an update served from the old repo.
+- continuity publishes its own channel pins to the seed **before** ideal_os
+  serves the handoff, so a repointed device never sees foreign pins.
+- `ideal_os` is archived (public, frozen at the handoff pins) as the
+  permanent straggler shim — see `release/README.md`.
+
+**Reference Specs:** `docs/sprints/sprint-1.9-spec.md`
+
+---
+
 ## Phase 2 — Second Platform (RetroDeck / Steam Deck)
 
 **Goal:** Cross-device sync works between TrimUI Brick and Steam Deck. Validates the PAL architecture with a fundamentally different platform.

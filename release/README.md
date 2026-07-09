@@ -53,3 +53,20 @@ the release cadence earns automation.
 - Removing a channel from this file strands devices on it (they hold
   at their current version via the legacy fallback failing loudly in
   the log) — don't remove channels, repoint them.
+
+## Migration: the frozen ideal_os manifest (Sprint 1.9)
+
+Continuity was reseeded from `ideal_os` at Phase 1 complete — a fresh SHA
+universe (see the repo README's Provenance section). The deployed fleet
+repoints here automatically via a normal OTA: the handoff build changes the
+updater's `OTA_URL` default **and** reconciles the cached clone's `origin`,
+so a device already in the field moves to continuity on its next check, not
+just fresh installs.
+
+`ideal_os` is **frozen** at the handoff: its `channels.json` permanently
+pins the handoff build (both `stable` and `nightly`), and the repo stays
+public and archived — never deleted, never made private. That frozen
+manifest is the permanent self-healing shim: any straggler device that only
+ever checks `ideal_os` still receives the handoff build, repoints to
+continuity, and version-parity-adopts continuity's seed without a refetch.
+Deleting `ideal_os` or making it private would strand such a device.

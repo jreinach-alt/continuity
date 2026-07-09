@@ -88,12 +88,19 @@ git -C "$REPO" add -A
 commit_as "brick-a" "snes/Super Metroid (USA).srm updated"
 
 printf 'v2' > "$REPO/gb/links_awakening.sav"
+# .rtc is a save-class sibling (Sprint 2.0) — same commit, same device
+printf 'clk' > "$REPO/gb/pokemon_crystal.rtc"
 git -C "$REPO" add -A
 commit_as "deck-b" "gb/links_awakening.sav updated"
 
-# Recent: a save state backup
+# Recent: save-state backups across every state name-shape (Sprint 2.0
+# expanded coverage — 4 of 5 were never archived before)
 mkdir -p "$REPO/states/SFC-snes9x"
 printf 's0' > "$REPO/states/SFC-snes9x/Super Metroid (USA).st0"
+printf 'sb' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state"
+printf 'sn' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state1"
+printf 'si' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state.0"
+printf 'sa' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state.auto"
 git -C "$REPO" add -A
 commit_as "brick-a" "state backup"
 
@@ -121,9 +128,14 @@ assert_contains "device B section" "$OUT" "### deck-b"
 assert_contains "spaced .srm listed byte-exact" "$OUT" \
     '- `snes/Super Metroid (USA).srm`'
 assert_contains ".sav listed" "$OUT" '- `gb/links_awakening.sav`'
+assert_contains ".rtc classified as a save" "$OUT" '- `gb/pokemon_crystal.rtc`'
 assert_contains "states section" "$OUT" "## Save states backed up"
 assert_contains "state file listed" "$OUT" \
     '- `states/SFC-snes9x/Super Metroid (USA).st0`'
+assert_contains "state .state shape listed" "$OUT" \
+    '- `states/SFC-snes9x/Super Metroid (USA).state`'
+assert_contains "state .state.auto shape listed" "$OUT" \
+    '- `states/SFC-snes9x/Super Metroid (USA).state.auto`'
 assert_contains "conflict section flagged" "$OUT" "## ⚠ Conflicts recorded"
 assert_contains ".local artifact listed" "$OUT" \
     '- `snes/Super Metroid (USA).srm.deck-b.local`'

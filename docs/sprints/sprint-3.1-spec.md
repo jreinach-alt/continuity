@@ -55,6 +55,27 @@ The recon report settles it factually (`=== firmware identity (Gate 0)
 Everything below assumes branch A or B (H700 aarch64 device in hand);
 "onion" naming is provisional pending the gate.
 
+**Owner confirmation (2026-07-09):** the device in hand IS an Anbernic
+RG40XX V, and its WiFi works (sync viable). It is believed to run
+"Onion OS" — which has no H700 build (Onion's own site: Miyoo Mini and
+Mini+ only, ARMv7) — so **branch B is operative**: the installed
+firmware is something else and identifying it is the first recon task.
+Branch C is eliminated. The owner has **no shell access** to the
+device, so recon proceeds in two stages:
+
+1. **Card-side recon (no device access needed):** the SD card in a PC
+   reader — the card's directory structure identifies the firmware
+   unambiguously (muOS / Knulli / ROCKNIX / stock all have distinctive
+   layouts), and yields boot hooks, RetroArch configs, and real save
+   files. Additionally the owner uploads the exact image/zip they
+   originally flashed ("the Onion OS build"), which identifies what was
+   actually installed.
+2. **Device-side recon (auto-run payload):** once the firmware is
+   identified, `recon_device.sh` is packaged in that firmware's native
+   app/script/update mechanism and run with a menu tap — same model as
+   the NextUI Tool PAK, no shell required. This captures the live-kernel
+   facts (uname, mounts, exec semantics) the card alone can't.
+
 ## Phase R — Recon (deliverable shipped with this spec)
 
 `src/platforms/onion/recon_device.sh` — a one-shot, read-only,

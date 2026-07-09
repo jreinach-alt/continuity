@@ -49,15 +49,29 @@ firmware-identity section resolves it factually, and branch B (retarget
 to the real firmware) or C (Onion target is actually a Miyoo ARMv7
 device → new cross-compile) needs an owner decision.
 
+## Gate 0 progress (2026-07-09, owner Q&A)
+
+Device confirmed: **RG40XX V in hand, WiFi working** (branch C
+eliminated; sync viable). Owner has **no shell access**; believes the
+device runs "Onion OS", which has no H700 build → branch B operative.
+Recon re-planned as two stages (see spec Gate 0): card-side recon
+(SD card in a PC reader + upload of the originally-flashed image) to
+identify the real firmware, then `recon_device.sh` packaged as a
+tap-to-run payload in that firmware's native mechanism.
+
 ## Open Items
 
-1. **Owner: run recon on the RG40XX V** — copy
-   `src/platforms/onion/recon_device.sh` to the SD card root, get a
-   shell (SSH/terminal per firmware), `sh /mnt/SDCARD/<name>.sh`, send
-   back `CONTINUITY_RECON.txt`. No secrets are captured.
-2. **Owner: resolve Decision Gate 0** (firmware identity / naming) once
-   the report is in.
-3. **Owner: approve the Sprint 3.1 spec** (or annotate).
-4. Implementation (Phase I of the spec) — blocked on 1–3.
-5. At implementation: add `src/platforms/onion/*.sh` to gate.sh's
+1. **Owner: card-side recon** — SD card in the PC: send the card's file
+   listing (`cmd /c "dir /s /b D:\ > %USERPROFILE%\Desktop\card_listing.txt"`,
+   adjust drive letter) and upload the exact image/zip originally
+   flashed to the card.
+2. **Agent: identify firmware from the listing; package
+   `recon_device.sh` as a tap-to-run payload** for that firmware.
+3. **Owner: run the payload on-device, send back
+   `CONTINUITY_RECON.txt`** (live-kernel facts: arch, mounts, exec
+   semantics).
+4. **Owner: resolve Gate 0 naming** (retarget platform id if not Onion)
+   and **approve the spec**.
+5. Implementation (Phase I) — blocked on 1–4.
+6. At implementation: add `src/platforms/onion/*.sh` to gate.sh's
    full-tier shellcheck list (coordinated shared edit).

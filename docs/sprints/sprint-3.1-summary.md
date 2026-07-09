@@ -101,20 +101,42 @@ when the PAK shipped.
   own decision to defer boot-hook wiring to the first validation round
   (preflight's boot-hook lines gather the data for it).
 
+## Hardware validation (2026-07-09, owner's RG40XX V)
+
+- Build `…-2236`: enrollment succeeded on-device (clone over TLS with
+  the ported Brick git, registration pushed) but the cold-start save
+  push never ran — **field defect: muOS's Task Toolkit kills the
+  task's process group on exit**, taking the plain-backgrounded daemon
+  with it. Fixed in `…-2336`: `tc_start_daemon` detaches via `setsid`
+  and VERIFIES the start (PID liveness polled and reported either
+  way). Recorded in `docs/platform/muos-field-notes.md`.
+- Build `…-2336`: **cold-start push of the device's existing save
+  library succeeded** — acceptance I1 (on-device binaries + TLS), I4
+  (enrollment), and the device→repo half of I5 are hardware-proven.
+- Boot hook resolved: muOS's documented **"User Init Scripts"**
+  mechanism (`MUOS/init/*.sh`, toggle in Advanced Settings) — hook +
+  test shipped, packaged as `MUOS/init/continuity.sh`.
+
 ## Open Items
 
-1. **Hardware validation round 1** (needs the device): binaries execute
-   on the real kernel; live TLS clone via bundled git; enrollment
-   (acceptance I4); save round-trip (I5); boot-hook decision from the
-   preflight's captured init data (then wire daemon autostart).
-3. **Cross-device test with the Brick** (I6) after single-device
-   validation.
-4. Unproven cores (nes, genesis, sms, gg, pce, arcade …) get map
+1. **Owner: enable the boot hook** (Configuration → General Settings →
+   Advanced Settings → User Init Scripts) after installing the build
+   that ships `MUOS/init/continuity.sh`; reboot; confirm via the
+   Continuity task that the daemon is already running.
+2. **Owner: verify repo layout on GitHub** (I3 field check): gb/ and
+   gbc/ split correctly out of the shared Gambatte dir; N64 names with
+   `[!]` intact; the Mystic Quest save present under snes/.
+3. **Remaining I5 checks**: runtime-poll push while playing (save →
+   quit game → ~30s → commit); repo→device materialization (boot
+   pull); reboot/crash-recovery cycles.
+4. **Cross-device test with the Brick** (I6), then PR to main
+   (owner merges).
+5. Unproven cores (nes, genesis, sms, gg, pce, arcade …) get map
    entries as the daemon's unknown-dir warnings surface them — never
    from memory.
-5. Refactor candidate for a future sprint (architecture signal, not
-   3.1): daemon + enroll_sd_card are now near-identical copies in two
+6. Refactor candidate for a future sprint (architecture signal, not
+   3.1): daemon + enroll_sd_card are near-identical copies in two
    platform dirs — CLAUDE.md's "two platforms need it → core" rule
    points at extracting a shared daemon skeleton.
-6. Roadmap: Onion OS deferred as Sprint 3.3 (needs Miyoo-family
+7. Roadmap: Onion OS deferred as Sprint 3.3 (needs Miyoo-family
    hardware; new ARMv7 cross-compile target).

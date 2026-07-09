@@ -71,6 +71,8 @@ APP="$OUT/.continuity/app"
 
 assert_file_exists "task entry" "$OUT/MUOS/task/Continuity.sh"
 assert_file_exists "recon task entry" "$OUT/MUOS/task/Continuity Recon.sh"
+assert_file_exists "boot hook" "$OUT/MUOS/init/continuity.sh"
+assert_executable "boot hook +x" "$OUT/MUOS/init/continuity.sh"
 assert_file_exists "daemon" "$APP/scripts/continuity_daemon.sh"
 assert_file_exists "pal" "$APP/scripts/pal_muos.sh"
 assert_file_exists "enroll" "$APP/scripts/enroll_sd_card.sh"

@@ -9,6 +9,9 @@
 #   <card>/.continuity/app/...        (scripts, binaries, config)
 #   <card>/MUOS/task/Continuity.sh    (Task Toolkit entry)
 #   <card>/MUOS/task/Continuity Recon.sh
+#   <card>/MUOS/init/continuity.sh    (boot hook — needs "User Init
+#                                      Scripts" enabled in muOS
+#                                      Advanced Settings)
 #
 # Output: build/muos-app/ staging + build/Continuity-muos-<ver>.zip.
 # Staging and zip live under build/ and are NOT committed (only
@@ -31,6 +34,7 @@ CORE_DIR="$PROJECT_ROOT/src/core"
 CONFIG_DIR="$PROJECT_ROOT/config"
 APP_DIR="$OUT_DIR/.continuity/app"
 TASK_DIR="$OUT_DIR/MUOS/task"
+INIT_DIR="$OUT_DIR/MUOS/init"
 
 # The binaries must come from a VERIFIED tree: the shipped PAK carries
 # its own checksums manifest, gate-verified on every full run.
@@ -51,7 +55,7 @@ fi
 rm -rf "$OUT_DIR"
 mkdir -p "$APP_DIR/bin" "$APP_DIR/libexec/git-core" \
          "$APP_DIR/share/templates" "$APP_DIR/scripts/core" \
-         "$APP_DIR/config/platform_maps" "$TASK_DIR"
+         "$APP_DIR/config/platform_maps" "$TASK_DIR" "$INIT_DIR"
 
 # ── Binaries (verified copies from the shipped PAK) ──────────────────
 
@@ -80,6 +84,10 @@ done
 # Task Toolkit entries — the on-device UI
 cp "$PLATFORM_DIR/task_continuity.sh" "$TASK_DIR/Continuity.sh"
 cp "$PLATFORM_DIR/recon_device.sh" "$TASK_DIR/Continuity Recon.sh"
+
+# Boot hook — muOS runs MUOS/init/*.sh at boot when "User Init Scripts"
+# is enabled (Advanced Settings); documented in the muxtweakadv module.
+cp "$PLATFORM_DIR/init_continuity.sh" "$INIT_DIR/continuity.sh"
 
 # ── Config ───────────────────────────────────────────────────────────
 
@@ -111,6 +119,7 @@ done
 
 find "$OUT_DIR" -name "*.sh" -exec chmod +x {} +
 chmod +x "$TASK_DIR/Continuity.sh" "$TASK_DIR/Continuity Recon.sh" \
+         "$INIT_DIR/continuity.sh" \
          "$APP_DIR/bin/git" "$APP_DIR/libexec/git-core/git" \
          "$APP_DIR/libexec/git-core/git-remote-https" \
          "$APP_DIR/libexec/git-core/git-remote-http"

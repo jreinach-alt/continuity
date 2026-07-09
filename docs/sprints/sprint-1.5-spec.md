@@ -17,8 +17,8 @@ Give the finished, tested conflict *engine* (`src/core/conflict_handler.sh`,
 platform-agnostic conflict-resolution experience. Build **presentation over
 existing primitives** — a shared, headless-testable controller
 (`conflict_ui.sh`) driving `ch_*` through a thin `pal_ui_*` rendering
-contract, plus the NextUI shims and the PAK entry point. Do **not** rebuild
-the engine.
+contract, the NextUI shims, and an extensible PAK menu shell the conflict
+flow (and the deferred PAK items) hang off. Do **not** rebuild the engine.
 
 ## Design gate (what exists vs. what this sprint adds)
 
@@ -33,20 +33,29 @@ the engine.
   implements it for NextUI (`show2.elf` + `js0`) and for a scripted **test
   PAL**, and teaches `pal_validate` an OPTIONAL check for it.
 - The NextUI PAK's enrolled-state screen (`launch.sh`) shows status/scan/OTA
-  today; this sprint adds the **"N conflicts"** primary entry that opens the
-  flow.
+  today with no menu; this sprint adds an **extensible main-menu shell**
+  whose **`Conflicts (N)`** row is the primary entry and whose future rows
+  (the deferred PAK items) are one-line additions.
 
-## Scope decision (owner input requested — see §Decisions)
+## Scope decision (owner-directed 2026-07-09)
 
 Roadmap 1.5 also lists status display, manual-sync trigger, and unlink.
-**Recommendation: split.** This sprint delivers the **gated, heavy** part —
-the conflict UI, `.conflict` v2, and the `pal_ui_*` contract. Status home /
-manual sync / unlink become **Sprint 1.5b** (a `status_ui.sh` that reuses
-the same `pal_ui_*` surface, per ui-design-system §6). Rationale: the
-conflict flow is the design-gated risk; the other three are a separate,
-ungated IA surface and would dilute this sprint's focus and test budget.
-The `pal_ui_*` contract this sprint defines is exactly the reuse vehicle
-that makes 1.5b cheap.
+**Decision: scope this sprint to the conflict-resolution UI plus the
+reusable foundation it needs — the PAK launch/menu shell and the `pal_ui_*`
+contract — built GENERAL, not conflict-specific, so the remaining PAK items
+plug in without rework.** Concretely:
+
+- The **PAK main-menu shell is extensible from day one**: it renders a
+  top-level menu whose entries are a data-driven list, shows **`Conflicts
+  (N)`** now, and is structured so a future entry (Status, Sync now, Unlink)
+  is a one-line addition — but **only the conflict path is wired** in this
+  sprint.
+- The `pal_ui_*` contract is defined and implemented as a **general
+  rendering surface** (menu/message/confirm/handoff), not tailored to
+  conflicts, so `status_ui.sh` et al. consume it unchanged.
+- **Status display / manual sync / unlink are deferred to a tracked fast
+  follow-up (Sprint 1.5b)** — sequenced, not dropped (see §Out of scope).
+  They become handlers hung off the same menu shell + `pal_ui_*` surface.
 
 ## In scope
 
@@ -104,14 +113,26 @@ that makes 1.5b cheap.
    `ch_get_conflict_info` reads v2 (already derives system/game; now also
    surfaces `identity`/`class`). **No compatibility shim** (design §3).
 
-5. **PAK entry point — `launch.sh`** (modified). In the enrolled state, after
-   status/scan, check `ch_count_conflicts`; when > 0, present the **primary**
-   conflict entry (`N conflicts — A=resolve  B=skip`) and, on `A`, source the
-   controller + NextUI shims and run `cu_run`. This entry is PRIMARY and does
-   **NOT** depend on Sprint 1.4's red dot (handoff): the persistent-dot nudge
-   is wired when 1.4 lands; the PAK-tap count is sufficient now.
+5. **Extensible PAK main-menu shell — `src/platforms/nextui/menu_ui.sh`**
+   (new). A **general** menu dispatcher rendered entirely through
+   `pal_ui_menu`, driven by a data-driven entry list (label + count + handler
+   per row). It shows **`Conflicts (N)`** (N from `ch_count_conflicts`, the
+   row hidden or shown-as-0 per §Decisions) and dispatches the selected row
+   to its handler. **Only the conflict handler (`cu_run`) is wired** this
+   sprint; Status / Sync now / Unlink are future rows added in one line each
+   (1.5b). The shell owns paging/selection/back via the contract, so adding a
+   row needs no new input plumbing. Not conflict-specific.
 
-6. **`pal_validate` optional check** (`pal.sh`) — a platform that advertises
+6. **PAK entry point — `launch.sh`** (modified). In the enrolled state, after
+   status/scan, source the menu shell + controller + NextUI shims and open
+   `menu_ui`. The conflict row is the **primary** actionable item and does
+   **NOT** depend on Sprint 1.4's red dot (handoff): the persistent-dot nudge
+   is wired when 1.4 lands; the PAK-tap count is sufficient now. With zero
+   conflicts and no other rows wired yet, the menu still opens (single
+   `Conflicts (0)` row / "Nothing to resolve" per §Decisions) — the shell is
+   the durable home the deferred items attach to.
+
+7. **`pal_validate` optional check** (`pal.sh`) — a platform that advertises
    conflict UI defines the full `pal_ui_*` set; `pal_validate` grows an
    OPTIONAL check that, IF any `pal_ui_*` is defined, ALL four must be
    (partial contract = hard error). Platforms with none fall back to the
@@ -154,9 +175,12 @@ that makes 1.5b cheap.
    `cold_start.sh` emit the §3 v2 object; `ch_get_conflict_info` parses
    `identity`/`class`; existing conflict/cold-start tests updated to v2 (no
    shim). `remote_*` stays nullable for cold-start.
-6. **PAK entry:** with N > 0 conflicts, the enrolled launch surfaces
-   `N conflicts` and `A` opens the list; with 0, no conflict screen appears.
-   (Test PAL / launch harness; hardware pass covers the real device.)
+6. **Menu shell + PAK entry:** the enrolled launch opens the main-menu shell;
+   the `Conflicts (N)` row shows the live count and dispatches to `cu_run`;
+   the shell renders entirely through `pal_ui_menu` and its entry list is
+   data-driven (proven by a test that adds a throwaway second row and sees it
+   render + dispatch without touching input plumbing). Selecting the conflict
+   row with N conflicts opens the list; the deferred rows are absent.
 7. **No path deletes the losing version before an explicit confirm;** an
    offline resolution queues the commit and pushes on connectivity return
    (engine behavior — asserted through the controller).
@@ -202,8 +226,14 @@ that makes 1.5b cheap.
   implementation) to the v2 schema (AC 5).
 - **Updated `pal_validate` test** (`tests/unit/core/test_pal_validate.sh`):
   the optional `pal_ui_*` check (AC 9).
+- **Unit — `tests/unit/nextui/test_menu_ui.sh`** (new): the menu shell over
+  the test PAL — the `Conflicts (N)` row shows the count and dispatches to its
+  handler; a second (throwaway) data-driven row renders + dispatches with no
+  input-plumbing change (proves extensibility, AC 6); back/cancel returns to
+  launch cleanly.
 - **Updated launch test** (`tests/unit/nextui/test_launch_sh.sh`): the
-  conflict entry point appears iff N > 0 (AC 6).
+  enrolled path opens the menu shell and the conflict row reflects the live
+  count (AC 6).
 
 ## File table
 
@@ -211,7 +241,9 @@ that makes 1.5b cheap.
 |---|---|
 | `src/core/conflict_ui.sh` | **create** — shared `cu_*` controller |
 | `src/platforms/nextui/pal_ui_nextui.sh` | **create** — NextUI `pal_ui_*` shims |
+| `src/platforms/nextui/menu_ui.sh` | **create** — extensible PAK main-menu shell (conflict path wired) |
 | `tests/fixtures/pal_ui_test.sh` | **create** — scripted-queue test PAL |
+| `tests/unit/nextui/test_menu_ui.sh` | **create** — menu shell rendering/dispatch/extensibility tests |
 | `tests/unit/core/test_conflict_ui.sh` | **create** — controller/state-machine unit tests |
 | `tests/unit/nextui/test_pal_ui_nextui.sh` | **create** — shim rendering/button tests |
 | `tests/integration/test_conflict_ui_flow.sh` | **create** — end-to-end flow |
@@ -234,8 +266,11 @@ No new top-level folders. All new source under existing `src/core/`,
 
 ## Out of scope
 
-- **Status home / manual-sync / unlink** — Sprint 1.5b (`status_ui.sh` over
-  the same `pal_ui_*` contract), per the scope decision above.
+- **Status home / manual-sync / unlink** — a **tracked fast follow-up
+  (Sprint 1.5b)**, sequenced not dropped: each becomes a menu row hung off
+  the extensible shell + a `status_ui.sh` consuming the same `pal_ui_*`
+  contract this sprint delivers. The foundation (menu shell, `pal_ui_*`) is
+  built general here specifically so 1.5b is additive, not a rework.
 - **Sprint 1.4 red-dot / notifications** — the PAK-tap count is the entry
   this sprint needs; the persistent dot is wired when 1.4 lands.
 - **`pal_on_sync_result` dot-word pairing** — deferred to the sprint that
@@ -251,13 +286,20 @@ No new top-level folders. All new source under existing `src/core/`,
 - **Sprint 2.0 on-device migration loose ends** — owner-side device work,
   tracked separately (handoff §Carried-forward).
 
-## Decisions requested (before implementation)
+## Decisions
 
-1. **Scope split (§Scope decision):** confine Sprint 1.5 to the conflict UI +
-   `.conflict` v2 + `pal_ui_*` contract, and defer status/manual-sync/unlink
-   to Sprint 1.5b? **(Recommend: yes.)**
-2. **`class` semantics (§Resolved ambiguities):** `class = srm` covers both
-   `.srm` and `.sav` (SRAM class), `rtc` for `.rtc`? **(Recommend: yes.)**
-3. **Color-never-alone (§Resolved ambiguities):** honor it via the always-worded
-   `pal_ui_*` status text now and defer the `pal_on_sync_result` dot pairing
-   to the dot's sprint (1.4)? **(Recommend: yes.)**
+1. **Scope (§Scope decision) — RESOLVED (owner, 2026-07-09):** conflict UI +
+   the reusable foundation (extensible PAK menu shell + general `pal_ui_*`
+   contract), conflict path wired only; status/manual-sync/unlink deferred to
+   a tracked follow-up (Sprint 1.5b).
+2. **`class` semantics (§Resolved ambiguities) — adopted default:** `class =
+   srm` covers both `.srm` and `.sav` (SRAM class), `rtc` for `.rtc`.
+   Proceeding unless the owner objects.
+3. **Color-never-alone (§Resolved ambiguities) — adopted default:** honored
+   via the always-worded `pal_ui_*` status text now; the `pal_on_sync_result`
+   dot pairing defers to the dot's sprint (1.4). Proceeding unless the owner
+   objects.
+4. **Empty-menu affordance — adopted default:** with zero conflicts the menu
+   still opens on a `Conflicts (0)` row (rather than hiding it), so the shell
+   is a stable home the deferred rows attach to and the "nothing to resolve"
+   state is explicit. Cheap to flip to hide-when-zero if the owner prefers.

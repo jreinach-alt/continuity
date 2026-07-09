@@ -1,9 +1,13 @@
 # Conflict-Resolution Experience — Design Spec
 
-**Status:** Draft for approval — 2026-07-09. Design gate for the
-per-platform conflict-UI sprints (NextUI Tool PAK, Sprint 1.5; Android,
-Sprint 3.2; any future desktop client). No UI implementation begins until
-this is approved. Same gate shape as
+**Status:** Approved 2026-07-09. Design gate for the per-platform
+conflict-UI sprints (NextUI Tool PAK, Sprint 1.5 — the reference
+implementation; Android, Sprint 3.2; any future desktop client).
+**Approved decisions:** group-by-game resolution (§7.1); shared
+`conflict_ui.sh` controller + `pal_ui_*` contract (§7.2); `.conflict` v2 is
+the standard with **no** back-compat reader (§3/§7.3); first implementation
+= NextUI Tool PAK on the Brick (§7.4); `keep_newest` offered but
+clock-guarded, manual default (§7.5). Same gate shape as
 `docs/design/save-format-canonicalization.md`.
 
 **Owner intent:** the conflict *engine* is finished and tested but has no
@@ -78,16 +82,22 @@ the same bytes:
 
 ## 3. Normative contract A — the `.conflict` schema (v2)
 
-There are **two incompatible `.conflict` shapes today** and this must be
-reconciled before any UI reads them:
+Two `.conflict` shapes exist in the **code** today — `ch_preserve_conflict`
+writes `{_schema_version, file, remote_device, remote_timestamp,
+local_device, local_timestamp, status}`, and `cold_start.sh`'s inline
+preservation writes `{canonical, local_device, timestamp, source}` (which
+`ch_get_conflict_info` cannot fully parse). But **no real repo has ever
+contained either shape**: a `.conflict` is produced only when two devices
+diverge on the same save, and the fleet is a single Brick, so every
+`.conflict` to date exists in tests. `.conflict` files are also *ephemeral*
+— resolution deletes them — not durable archival data like saves.
 
-- `ch_preserve_conflict` writes `{_schema_version, file, remote_device,
-  remote_timestamp, local_device, local_timestamp, status}`.
-- `cold_start.sh`'s inline preservation writes `{canonical, local_device,
-  timestamp, source}` — which `ch_get_conflict_info` cannot fully parse (no
-  `remote_device`/`remote_timestamp` → it warns "missing fields").
-
-**Decision:** one canonical schema, written by both producers:
+**Decision (owner, 2026-07-09):** v2 is THE schema. No backward-compatible
+reader — there is no shipped conflict data to be compatible with, so a
+tolerant reader would defend a format that never existed. Both producers
+(`ch_preserve_conflict` and `cold_start.sh`'s inline preservation) emit v2
+and their tests update to match; the v2-writing daemon ships as one unit
+with the fleet, so any `.conflict` a UI ever reads is v2 by construction.
 
 ```json
 {
@@ -104,10 +114,9 @@ reconciled before any UI reads them:
 }
 ```
 
-A reader tolerates the legacy shapes (map `canonical`→`file`, absent
-`remote_*`→`unknown`/empty) so mid-migration repos still render. This is a
-small, self-contained core change that should land WITH the first UI
-sprint, not before.
+`remote_*` stays nullable (`unknown`/empty) — cold-start preservation
+genuinely has no remote counterpart device, and `keep_newest` already
+refuses to guess on a missing timestamp (§4).
 
 ## 4. Normative contract B — resolution state machine
 
@@ -228,9 +237,10 @@ small rendering shims, and Android the one native reimplementation.
    per-platform-from-scratch.** Recommend **shared controller** — it is the
    PAL philosophy (one core, thin platform shims) and makes the UI
    headless-testable. Cost: designing the `pal_ui_*` surface carefully.
-3. **`.conflict` schema v2 normalization** (§3) landing with the first UI
-   sprint. Recommend **yes** — the UI can't render reliably over two
-   shapes; the reader stays back-compatible.
+3. **`.conflict` schema v2 normalization** (§3). **Resolved (owner):** v2
+   is the standard; both writers emit it; **no** back-compat reader — no
+   real repo has ever held a `.conflict` (conflicts need two devices; the
+   fleet is one), so compatibility would defend data that never existed.
 4. **First implementation = NextUI Tool PAK (Sprint 1.5), Brick-validated.**
    Recommend **yes** (Brick is available). This turns 1.5 from "Planned"
    into "implements this design."
@@ -244,7 +254,9 @@ small rendering shims, and Android the one native reimplementation.
   §4 guard, proven headless under the test PAL (both privilege passes) —
   including the trying-modified "third version" path and the group
   resolution of `.srm`+`.rtc` together.
-- `.conflict` v2 read/write with a legacy-shape reader test.
+- `.conflict` v2 emitted by BOTH producers (`ch_preserve_conflict` and
+  `cold_start.sh`) and read by `ch_get_conflict_info`; both writers and
+  their existing tests are updated to v2 (no compatibility shim).
 - Brick realization validated on hardware (B1): a real two-device conflict
   surfaces the dot, the PAK opens the list, a try loads a version into the
   live slot, play-on is detected, and resolution commits + pushes.

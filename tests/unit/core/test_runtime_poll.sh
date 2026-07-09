@@ -463,6 +463,39 @@ assert_eq "rp_run git edge case: no commit" "$commit_before" "$commit_after"
 # Restore
 . "$PROJECT_ROOT/src/core/change_detector.sh"
 
+# ============================
+# RZIP quarantine surfaces the NAMED log line through the phase
+# (regression: the Sprint 2.0 named line was swallowed by 2>/dev/null at
+# the call site, and rc=3 was mislabeled "unknown system dir")
+# ============================
+
+# --- rp_confirm_changes: rzip candidate is skipped, named line to stderr,
+#     NOT mislabeled as unknown system ---
+setup_poll_env "qz1"
+printf '#RZIPv\001#____________xxxx' > "$_PE_SAVES/SFC/compressed.srm"
+qz_err="$TEST_TMPDIR/qz1.err"
+output=$(rp_confirm_changes "$_PE_REPO" "$_PE_SAVES/SFC/compressed.srm" 2>"$qz_err")
+qz_stderr=$(cat "$qz_err")
+assert_eq "quarantine: rzip not printed as a change" "" "$output"
+assert_contains "quarantine: named log line reaches the log" "$qz_stderr" "compressed save skipped"
+assert_not_contains "quarantine: not mislabeled unknown system dir" "$qz_stderr" "unknown system dir"
+
+# --- rp_run: rzip candidate quarantined — repo untouched, no commit,
+#     named line logged ---
+setup_poll_env "qz2"
+sleep 1
+printf '#RZIPv\001#____________yyyy' > "$_PE_SAVES/SFC/compressed2.srm"
+qz2_err="$TEST_TMPDIR/qz2.err"
+commit_before=$("$CONTINUITY_GIT_BIN" -C "$_PE_REPO" rev-parse HEAD)
+rc=0; rp_run "$_PE_REPO" >/dev/null 2>"$qz2_err" || rc=$?
+commit_after=$("$CONTINUITY_GIT_BIN" -C "$_PE_REPO" rev-parse HEAD)
+qz2_stderr=$(cat "$qz2_err")
+assert_rc "rp_run quarantine: returns 0" 0 "$rc"
+assert_eq "rp_run quarantine: repo untouched (no commit)" "$commit_before" "$commit_after"
+assert_file_not_exists "rp_run quarantine: rzip not copied to repo" "$_PE_REPO/snes/compressed2.srm"
+assert_contains "rp_run quarantine: named log line present" "$qz2_stderr" "compressed save skipped"
+assert_not_contains "rp_run quarantine: not mislabeled" "$qz2_stderr" "unknown system dir"
+
 # --- Summary ---
 printf '\ntest_runtime_poll: %s passed, %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ] || exit 1

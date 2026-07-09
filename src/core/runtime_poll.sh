@@ -67,6 +67,10 @@ rp_confirm_changes() {
         local repo_path rc_map
         rc_map=0
         repo_path=$(rp_map_device_path "$device_path" 2>/dev/null) || rc_map=$?
+        if [ "$rc_map" -eq 3 ]; then
+            pal_log "warn" "Poll: compressed save skipped — set save format to uncompressed: $device_path"
+            continue
+        fi
         if [ "$rc_map" -ne 0 ] || [ -z "$repo_path" ]; then
             pal_log "warn" "Poll confirm: unknown system dir, skipping: $device_path"
             continue

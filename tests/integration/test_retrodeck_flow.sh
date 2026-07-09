@@ -191,17 +191,16 @@ printf 'zelda-sram-v2-longer' > "$RDHOME/saves/gba/Zelda Minish Cap (USA).srm"
 cp "$TESTS_DIR/fixtures/rzip/save_rzip.bin" "$RDHOME/saves/gba/Compressed Game.srm"
 : > "$RDHOME/roms/gba/Compressed Game.gba"
 
-rc=0; rdd_poll_once >/dev/null 2>&1 || rc=$?
+poll_log="$TEST_TMPDIR/poll.log"
+rc=0; rdd_poll_once >/dev/null 2>"$poll_log" || rc=$?
 assert_rc "poll cycle ok" 0 "$rc"
 
-# The named quarantine line is the mapper's contract (rc 3 + self-naming
-# log). NOTE: every phase call site currently invokes the mapper with
-# 2>/dev/null, so in-daemon logs show a generic skip instead — flagged
-# as a core defect in the sprint summary; asserted at mapper level here.
-quarantine_log="$TEST_TMPDIR/quarantine.log"
+# The mapper is a pure classifier (rc 3); the PHASE surfaces the named
+# "compressed save skipped" line to the daemon log. (Previously the
+# mapper's line was swallowed by the 2>/dev/null at every phase call site
+# — fixed so the poll cycle itself names the quarantine.)
 rc=0
-pm_device_to_canonical "$RDHOME/saves/gba/Compressed Game.srm" \
-    >/dev/null 2>"$quarantine_log" || rc=$?
+pm_device_to_canonical "$RDHOME/saves/gba/Compressed Game.srm" >/dev/null 2>&1 || rc=$?
 assert_rc "compressed save quarantined (rc 3)" 3 "$rc"
 
 work=$(mktemp -d)
@@ -215,7 +214,8 @@ case "$remote_files" in
     *"Compressed Game"*) printf 'FAIL: RZIP save leaked into repo\n' >&2; failed=$((failed+1)) ;;
     *) passed=$((passed+1)) ;;
 esac
-assert_contains "quarantine names itself" "$(cat "$quarantine_log")" "Compressed save skipped"
+assert_contains "quarantine names itself in the daemon log" \
+    "$(cat "$poll_log")" "compressed save skipped"
 rm -f "$RDHOME/saves/gba/Compressed Game.srm" "$RDHOME/roms/gba/Compressed Game.gba"
 
 # =====================================================================

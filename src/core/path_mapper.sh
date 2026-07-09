@@ -359,7 +359,7 @@ _pm_canonicalize_filename() {
 # canonicalization is disabled.
 #   0 -> prints canonical repo path
 #   1 -> unknown system directory
-#   3 -> compressed save quarantined (prints nothing)
+#   3 -> compressed save quarantined (prints nothing; caller logs the named line)
 pm_device_to_canonical() {
     local device_path repo_dirpath system filename
     device_path="$1"
@@ -368,9 +368,11 @@ pm_device_to_canonical() {
     system=$(printf '%s' "$repo_dirpath" | sed 's|/.*||')
     filename=$(printf '%s' "$repo_dirpath" | sed 's|[^/]*/||')
 
-    # Container sniff — only real RZIP bytes trigger it, in any mode.
+    # Container sniff — real RZIP bytes quarantine (rc 3), in any mode.
+    # Stays a pure classifier: the CALLER emits the named "compressed save
+    # skipped" line (it has the device path, and every phase captures this
+    # function with 2>/dev/null, which would otherwise swallow the line).
     if [ "$(pm_container_class "$device_path")" = "rzip" ]; then
-        pal_log "warn" "Compressed save skipped — set save format to uncompressed: $repo_dirpath"
         return 3
     fi
 

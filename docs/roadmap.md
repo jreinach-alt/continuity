@@ -416,9 +416,26 @@ scanner-coverage + `.rtc` fixes are 2.0 prerequisites).
 
 ## Phase 3 — Additional Platforms
 
-### Sprint 3.1 — Onion OS Client (outline)
+### Sprint 3.1 — muOS Client, Anbernic RG40XX V (in progress)
 
-New PAL implementation + enrollment trigger. Nearly identical to NextUI. Different save paths, different boot hook mechanism. Same core engine. No core code changes.
+**Status:** Spec drafted (`docs/sprints/sprint-3.1-spec.md`, DRAFT) —
+Gate 0 resolved 2026-07-09: the fleet's H700 handheld runs **muOS**
+(Onion OS has no H700 build; see Sprint 3.3). Recon script shipped;
+implementation blocked on the on-device recon report + spec approval.
+
+New PAL implementation + enrollment trigger. Nearly identical to NextUI:
+same aarch64 arch as the Brick (binary port expected, not a new
+cross-compile), different save paths, muOS boot/task mechanism. Same
+core engine. No core code changes.
+
+### Sprint 3.3 — Onion OS Client (outline, deferred — no test hardware)
+
+Onion OS targets the Miyoo Mini family (ARMv7) — a NEW cross-compile
+target, not a port of the Brick binaries. Owner wants Onion support,
+but the current fleet has no Onion-capable device to validate against,
+and platform facts are validated on real hardware (project rule).
+Revisit when the fleet grows. `config/platform_maps/onion.json` is the
+placeholder.
 
 ### Sprint 3.2 — Android Client (outline)
 
@@ -436,7 +453,10 @@ data (RetroArch's loader accepts it as the legacy format — verified in
 source), so handoff is container transforms + metadata, no emulator
 changes. Phases S1–S3 in the doc; S1 rides with Sprint 2.0.
 **Owner decisions:** platform list = OnionOS (confirmed 2026-07-07;
-MuOS reading was wrong). Still open: auto-slot handoff default;
+MuOS reading was wrong). [2026-07-09 correction: the H700 handheld in
+the fleet runs muOS after all — Onion has no H700 build. Onion remains
+desired but is deferred until Onion-capable hardware exists; see
+Sprint 3.3.] Still open: auto-slot handoff default;
 conflict-policy approval (states = last-writer-wins per slot, history
 as undo — unlike saves). Cross-emulator tier: see
 `docs/design/state-transmutation.md` (R&D framework, perpetually

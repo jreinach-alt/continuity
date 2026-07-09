@@ -1,25 +1,28 @@
 #!/bin/sh
 # shellcheck shell=ash  # BusyBox ash target — local is supported
 # shellcheck disable=SC3043
-# Continuity — Sprint 3.1 on-device recon for the Anbernic RG40XX V.
+# Continuity — Sprint 3.1 on-device recon for the Anbernic RG40XX V
+# running muOS (Gate 0 resolved 2026-07-09; probes remain firmware-
+# agnostic so a surprise userland still gets captured).
 #
-# Run ON THE DEVICE (SSH or terminal app):
-#     sh /mnt/SDCARD/recon_continuity.sh
-# Writes a single report file (default: <SD root>/CONTINUITY_RECON.txt)
-# and prints its path when done. Read-only except for that report and a
-# self-cleaning probe directory; never reads WiFi credentials; masks any
-# setup.json PAT to its length.
+# Run ON THE DEVICE. muOS (no shell needed): copy this file to the
+# primary SD card as MUOS/task/Continuity Recon.sh, then on the device
+# open Applications -> Task Toolkit and run "Continuity Recon". Any
+# firmware with a shell: sh /path/to/recon_device.sh
+# Writes a single report file (default: <SD root>/CONTINUITY_RECON.txt
+# — on muOS the SD1 root, /mnt/mmc) and prints its path when done.
+# Read-only except for that report and a self-cleaning probe directory;
+# never reads WiFi credentials; masks any setup.json PAT to its length.
 #
 # Deliberate deviation from the house `set -e` rule: this is a one-shot
-# diagnostic on unknown firmware — an unguarded probe failing must cost
-# one report line, not the whole report (the field-notes lesson: every
-# lost fact is an SD-card round-trip). All probes are individually
-# guarded instead.
+# diagnostic on a not-yet-validated userland — an unguarded probe
+# failing must cost one report line, not the whole report (the
+# field-notes lesson: every lost fact is an SD-card round-trip). All
+# probes are individually guarded instead.
 #
 # Every probe is best-effort: a missing tool or path is reported, never
 # fatal. The report answers the Sprint 3.1 spec's decision gates:
-#   - Gate 0: which firmware is ACTUALLY installed (Onion has no known
-#     H700 build — muOS / Knulli / ROCKNIX / stock are the candidates)
+#   - Gate 0 confirmation: muOS identity + version on THIS device
 #   - arch + libc + kernel (does the Brick's static aarch64 git port?)
 #   - exec semantics on the SD mount (noexec? symlinks? /proc/self/exe?)
 #   - real save/state files and RetroArch config (name style, RZIP risk)
@@ -171,7 +174,9 @@ rc_detect_sd() {
         printf '%s\n' "$RC_SD_ROOT"
         return 0
     fi
-    for d in /mnt/SDCARD /mnt/sdcard /mnt/mmc /storage/roms /userdata /mnt/SDCARD2 /media/sdcard; do
+    # /mnt/mmc before /mnt/sdcard: on muOS, SD1 (where MUOS/ lives) is
+    # /mnt/mmc and /mnt/sdcard is the optional second card.
+    for d in /mnt/SDCARD /mnt/mmc /mnt/sdcard /storage/roms /userdata /mnt/SDCARD2 /media/sdcard; do
         if [ -d "$d" ]; then
             printf '%s\n' "$d"
             return 0

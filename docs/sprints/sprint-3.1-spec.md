@@ -1,10 +1,12 @@
-# Sprint 3.1 — Onion OS Client on the Anbernic RG40XX V
+# Sprint 3.1 — muOS Client on the Anbernic RG40XX V
 
-**Status:** DRAFT — blocked on (a) on-device recon results and (b) owner
-approval. Do not implement past the recon deliverable until both land.
+**Status:** DRAFT — Gate 0 RESOLVED (muOS, owner-confirmed 2026-07-09).
+Blocked on (a) the on-device recon report and (b) owner approval of this
+spec. Do not implement past the recon deliverable until both land.
 
 **Kickoff brief:** `docs/sprints/sprint-3.1-anbernic-kickoff.md` (on
-`claude/parallel-kickoff` until it merges).
+`claude/parallel-kickoff` until it merges). The brief targeted "Onion OS
+on the RG40XX V"; Gate 0 below records why the platform is muOS.
 
 **Development branch:** `claude/sprint-3.1-anbernic-kickoff-abjqjc` →
 PR to `main`; owner merges.
@@ -12,11 +14,11 @@ PR to `main`; owner merges.
 ## Goal
 
 Bring up the Continuity platform client on the owner's Anbernic
-**RG40XX V** (Allwinner H700, 4× Cortex-A53, aarch64): PAL, enrollment,
-daemon + boot hook, platform map v2, bundled-binary validation — the
-same bring-up shape as NextUI Phase 1. Ends with a real save round-trip
-on the device and a cross-device sync with the Brick (the Sprint 2.3
-analogue for this pairing).
+**RG40XX V** (Allwinner H700, 4× Cortex-A53, aarch64) running **muOS**:
+PAL, enrollment, daemon + boot hook, platform map v2, bundled-binary
+validation — the same bring-up shape as NextUI Phase 1. Ends with a real
+save round-trip on the device and a cross-device sync with the Brick
+(the Sprint 2.3 analogue for this pairing).
 
 The Fable-class core is the **binary port + exec-semantics validation
 on a new userland** (git transport-helper re-exec; busybox
@@ -24,86 +26,64 @@ on a new userland** (git transport-helper re-exec; busybox
 `docs/platform/nextui-field-notes.md`. Same arch ≠ same userland;
 verify, don't assume.
 
-## Decision Gate 0 — firmware identity (MUST resolve first)
+## Decision Gate 0 — firmware identity: RESOLVED (muOS)
 
 Desk research (2026-07-09) found **no Onion OS build for H700/Anbernic
-hardware** — Onion officially targets the Miyoo Mini family (ARMv7);
-H700 support is an open feature request
+hardware** — Onion targets the Miyoo Mini family (ARMv7); H700 support
+is an open feature request
 ([OnionUI/Onion discussion #1697](https://github.com/OnionUI/Onion/discussions/1697)).
-The established H700 CFWs are **muOS**, **Knulli** (Batocera-based),
-**ROCKNIX**, and modified **stock**. This conflicts with the project
-premise "Anbernic (Onion OS)" (CLAUDE.md, roadmap) and with the owner's
-2026-07-07 note "platform list = OnionOS … MuOS reading was wrong."
+Owner Q&A then confirmed: the device in hand IS an RG40XX V with
+working WiFi, and (2026-07-09) **it runs muOS**. Consequences:
 
-The recon report settles it factually (`=== firmware identity (Gate 0)
-===` section). Branches:
+- **This sprint's platform id is `muos`.** Artifacts live at
+  `src/platforms/muos/**`, `config/platform_maps/muos.json`,
+  `tests/unit/muos/**`.
+- **Onion OS stays on the roadmap as a future platform** (owner wants
+  it, but has no Onion-capable hardware in the current fleet to
+  validate against — and the project rule is that platform facts get
+  validated on real devices). `config/platform_maps/onion.json` remains
+  as the future placeholder; no Onion code ships in 3.1.
+- Same aarch64 architecture as the Brick, so the binary-port plan
+  stands; the roadmap's 2026-07-07 note "MuOS reading was wrong" is
+  superseded by this confirmation.
+- The owner has **no shell access** — recon and all future device
+  interaction must be menu-driven (see Phase R).
 
-- **A — the device really runs an Onion build** (unofficial port):
-  proceed per this spec as written.
-- **B — the device runs muOS / Knulli / ROCKNIX / stock:** owner
-  decision required. The sprint retargets to that firmware: platform id,
-  `src/platforms/<fw>/`, `config/platform_maps/<fw>.json`, taxonomy
-  alias, plus CLAUDE.md + roadmap wording — approval-class changes.
-  The bring-up shape (this spec's scope) is unchanged; paths, boot hook,
-  and delivery mechanism re-anchor to the real firmware.
-- **C — the Onion target is actually a Miyoo-family device** (owner has
-  a different device in mind for Onion): that device is **ARMv7, not
-  aarch64** — the Brick's binaries cannot port and `build_git.sh` /
-  `build_busybox.sh` need a new target triple. Materially bigger sprint;
-  re-spec before implementing.
+## Phase R — Recon (deliverable shipped; awaiting device run)
 
-Everything below assumes branch A or B (H700 aarch64 device in hand);
-"onion" naming is provisional pending the gate.
+`src/platforms/muos/recon_device.sh` — a one-shot, read-only,
+BusyBox-ash diagnostic, firmware-agnostic so a surprise userland still
+gets captured.
 
-**Owner confirmation (2026-07-09):** the device in hand IS an Anbernic
-RG40XX V, and its WiFi works (sync viable). It is believed to run
-"Onion OS" — which has no H700 build (Onion's own site: Miyoo Mini and
-Mini+ only, ARMv7) — so **branch B is operative**: the installed
-firmware is something else and identifying it is the first recon task.
-Branch C is eliminated. The owner has **no shell access** to the
-device, so recon proceeds in two stages:
+**How to run on muOS (no shell needed)** — muOS runs user scripts
+placed in `MUOS/task/` on the primary SD card via Applications → Task
+Toolkit ([muxtask module](https://muos.dev/tour/modules/muxtask),
+[community docs](https://github.com/PetraOleum/handheld-script-examples)):
 
-1. **Card-side recon (no device access needed):** the SD card in a PC
-   reader — the card's directory structure identifies the firmware
-   unambiguously (muOS / Knulli / ROCKNIX / stock all have distinctive
-   layouts), and yields boot hooks, RetroArch configs, and real save
-   files. Additionally the owner uploads the exact image/zip they
-   originally flashed ("the Onion OS build"), which identifies what was
-   actually installed.
-2. **Device-side recon (auto-run payload):** once the firmware is
-   identified, `recon_device.sh` is packaged in that firmware's native
-   app/script/update mechanism and run with a menu tap — same model as
-   the NextUI Tool PAK, no shell required. This captures the live-kernel
-   facts (uname, mounts, exec semantics) the card alone can't.
+1. Power off the device, put SD1 (the card with the `MUOS` folder) in a
+   PC reader.
+2. Copy `recon_device.sh` to `MUOS/task/Continuity Recon.sh` on that
+   card. Do NOT open/re-save it in a Windows editor (the CRLF trap —
+   field notes).
+3. Card back in, boot, open **Applications → Task Toolkit → Continuity
+   Recon**, let it finish.
+4. Power off, card back in the PC: send back `CONTINUITY_RECON.txt`
+   from the card's root. No secrets are captured (no WiFi configs read;
+   any `setup.json` PAT masked to a character count).
 
-## Phase R — Recon (deliverable shipped with this spec)
-
-`src/platforms/onion/recon_device.sh` — a one-shot, read-only,
-BusyBox-ash diagnostic. The owner copies it to the SD card and runs it
-on the device; it writes `CONTINUITY_RECON.txt` at the SD root.
-
-**How to run** (whichever access path the firmware offers):
-
-1. Copy `recon_device.sh` to the SD card root (any OS, any filename —
-   e.g. `recon_continuity.sh`).
-2. Get a shell on the device: SSH (Knulli/ROCKNIX enable it in settings;
-   muOS ships a terminal app / SSH via its utilities) or any on-device
-   terminal.
-3. `sh /mnt/SDCARD/recon_continuity.sh` (adjust the mount point if the
-   report of step 4 says otherwise — the script autodetects common SD
-   roots).
-4. Send back `CONTINUITY_RECON.txt` from the SD root. It contains no
-   secrets: it never reads WiFi configs and masks any `setup.json` PAT
-   to its character count.
+If `MUOS/task/` does not exist on the card (Task Toolkit location has
+moved across muOS releases), send a top-level file listing of the card
+instead and the payload location gets adjusted to the installed
+version.
 
 **What the report answers → which spec blank it fills:**
 
 | Recon section | Fills |
 |---|---|
 | kernel/cpu, shell/userland (ELF class of `/bin/sh`, busybox, libc) | Binary strategy: port Brick binaries vs rebuild |
-| firmware identity (Gate 0) | Gate 0 branch; platform id and naming |
+| firmware identity | muOS version; confirms Gate 0 on-device |
 | git | Whether a usable firmware git exists (may eliminate the bundled-git problem) |
-| mounts/storage + exec semantics (noexec, symlinks, `/proc/self/exe`, mtime) | Where binaries can live; delivery packaging; whether the vendored-busybox tiers can work |
+| mounts/storage + exec semantics (noexec, symlinks, `/proc/self/exe`, mtime) | Where binaries can live; whether the vendored-busybox tiers can work |
 | saves/roms landscape + first-bytes RZIP check | `saves_root`, `rom_roots`, `save_name_style`, `save_container` for the v2 map — validated against REAL files, never assumed |
 | retroarch config | Save/state dir layout (`sort_savefiles_*`), compression risk (`save_file_compression` → RZIP quarantine path) |
 | boot/autostart | The boot-hook mechanism (the `auto.sh` equivalent) |
@@ -123,49 +103,49 @@ Mirrors NextUI Phase 1 (Sprints 1.1–1.3 compressed, minus conflict UI):
    device's actual kernel/userland. Rebuild via the existing
    parameterized `build_git.sh`/`build_busybox.sh` only on demonstrated
    mismatch.
-2. **PAL** — `pal_onion.sh`: the 5 required vars + 4 required functions
+2. **PAL** — `pal_muos.sh`: the 5 required vars + 4 required functions
    (`src/core/pal.sh`), plus `CONTINUITY_STATES_ROOT`,
    `CONTINUITY_ROMS_ROOT`, and the git env wiring (GIT_EXEC_PATH,
    GIT_SSL_CAINFO, GIT_TEMPLATE_DIR, PATH belt) per the NextUI PAL.
-3. **Platform map v2** — `config/platform_maps/onion.json` upgraded to
-   `_schema_version 2.0` (`save_name_style` — expected `retroarch`,
+3. **Platform map v2** — `config/platform_maps/muos.json` (new,
+   `_schema_version 2.0`): `save_name_style` — expected `retroarch`,
    CONFIRMED against real device files; `save_container`; `rom_roots`;
-   real `system_paths`). The current file is a Sprint 0.1 placeholder
-   with Miyoo-guessed paths — every field gets re-derived from recon.
+   real `system_paths`. Every field derived from recon, none from
+   memory. (`onion.json` is untouched — future platform placeholder.)
 4. **Enrollment** — `enroll_sd_card.sh` adapted from NextUI (setup.json
    at SD root, `GIT_TERMINAL_PROMPT=0`, low-speed timeouts, stale-clone
    removal, network wait).
 5. **Daemon + boot hook** — `continuity_daemon.sh` adapted from NextUI
    (PID file, module loading, boot dispatch, 30s poll, SIGTERM final
    push), started fully detached (`</dev/null >/dev/null 2>&1 &`) from
-   the firmware's boot hook; vendored-interpreter fail-open self-test
+   muOS's boot mechanism (recon-gated; a Task Toolkit entry is the
+   fallback manual trigger). Vendored-interpreter fail-open self-test
    preserved. Core sync engine used **unchanged**.
 6. **Preflight doctor** — adapted `preflight.sh`; report to
    `CONTINUITY_DIAGNOSTIC.txt` at SD root; every failure names itself
    with the build stamp (observability protocol).
-7. **Delivery packaging** — recon-gated: the PAK concept is NextUI's;
-   this platform gets whatever its firmware's app/script convention is,
-   as a versioned zip built from the verified tree. OTA participation
-   deferred (see out-of-scope).
+7. **Delivery packaging** — recon-gated: muOS's app/task convention
+   (the PAK concept is NextUI's), shipped as a versioned zip built from
+   the verified tree. OTA participation deferred (see out-of-scope).
 
 ### File table (Phase I)
 
 | File | Action |
 |---|---|
-| `src/platforms/onion/recon_device.sh` | shipped in Phase R |
-| `src/platforms/onion/pal_onion.sh` | create |
-| `src/platforms/onion/continuity_daemon.sh` | create (adapted) |
-| `src/platforms/onion/enroll_sd_card.sh` | create (adapted) |
-| `src/platforms/onion/preflight.sh` | create (adapted) |
-| `src/platforms/onion/<boot-hook installer>` | create — name/mechanism recon-gated |
-| `config/platform_maps/onion.json` | upgrade to schema 2.0 |
-| `tests/unit/onion/test_recon_device.sh` | shipped in Phase R |
-| `tests/unit/onion/test_pal_onion.sh` | create |
-| `tests/unit/onion/test_continuity_daemon.sh` | create (adapted) |
-| `tests/unit/onion/test_enroll_sd_card.sh` | create (adapted) |
-| `tests/unit/onion/test_preflight.sh` | create (adapted) |
-| `scripts/gate.sh` | add `src/platforms/onion/*.sh` to the full-tier shellcheck list (small shared edit — coordinate at merge) |
-| `docs/platform/<device>-field-notes.md` | create during hardware validation |
+| `src/platforms/muos/recon_device.sh` | shipped in Phase R |
+| `src/platforms/muos/pal_muos.sh` | create |
+| `src/platforms/muos/continuity_daemon.sh` | create (adapted) |
+| `src/platforms/muos/enroll_sd_card.sh` | create (adapted) |
+| `src/platforms/muos/preflight.sh` | create (adapted) |
+| `src/platforms/muos/<boot-hook installer>` | create — name/mechanism recon-gated |
+| `config/platform_maps/muos.json` | create (schema 2.0, recon-derived) |
+| `tests/unit/muos/test_recon_device.sh` | shipped in Phase R |
+| `tests/unit/muos/test_pal_muos.sh` | create |
+| `tests/unit/muos/test_continuity_daemon.sh` | create (adapted) |
+| `tests/unit/muos/test_enroll_sd_card.sh` | create (adapted) |
+| `tests/unit/muos/test_preflight.sh` | create (adapted) |
+| `scripts/gate.sh` | add `src/platforms/muos/*.sh` to the full-tier shellcheck list (small shared edit — coordinate at merge) |
+| `docs/platform/muos-field-notes.md` | create during hardware validation |
 | `docs/sprints/sprint-3.1-summary.md` | update at completion |
 
 If implementation requires a file not in this table (or any edit to
@@ -178,15 +158,16 @@ Recon phase (now):
 - R1. Recon script runs under `busybox ash`, exits 0 with probes
   degraded gracefully, writes a single report, leaves no artifacts,
   never exposes secrets. (Unit-tested; hardware run pending.)
-- R2. Owner has run it on the RG40XX V and the report resolves Gate 0,
-  arch/libc, exec semantics, save landscape, boot hook.
+- R2. Owner has run it on the RG40XX V via Task Toolkit and the report
+  resolves muOS version, arch/libc, exec semantics, save landscape,
+  boot hook.
 
 Implementation phase (after approval):
 - I1. Bundled `git` + `busybox` validated per the field-notes protocol
   under qemu AND on-device: live TLS clone, transport-helper re-exec,
   `/proc/self/exe` applet tier (or documented fall-through), with the
   host git hidden during emulated validation.
-- I2. `pal_onion.sh` passes `pal_validate`; the full core suite passes
+- I2. `pal_muos.sh` passes `pal_validate`; the full core suite passes
   against it via the PAL-swap test pattern with **zero core changes**.
 - I3. Platform map v2 fields byte-validated against real device files
   (name style, container, paths) — never asserted from memory.
@@ -210,13 +191,16 @@ Implementation phase (after approval):
   enrollment, preflight — all under `busybox ash`, self-contained in
   `$TMPDIR`-derived per-process dirs, both privilege passes.
 - Integration: existing `test_pal_swap.sh` pattern extended to the
-  onion PAL; daemon lifecycle against a real local git remote.
+  muos PAL; daemon lifecycle against a real local git remote.
 - Hardware checklist (owner-run, documented in the summary): enrollment,
   save round-trip, reboot cycles, crash recovery, cross-device with the
   Brick.
 
 ## Out of scope
 
+- **Onion OS client** — deferred to its own future sprint when
+  Onion-capable hardware (Miyoo Mini family, ARMv7 — new cross-compile
+  target) exists in the fleet. `onion.json` placeholder retained.
 - **Conflict UI** for this platform (own sprint, implements the approved
   conflict-UX design + UI design system).
 - **Save-state restore / cross-device state sync** (designs exist;
@@ -226,37 +210,35 @@ Implementation phase (after approval):
   delivery for 3.1.
 - **RZIP codec integration** — if recon finds compressed saves, the
   Sprint 2.0 quarantine path applies; codec work stays Phase 3.
-- Roadmap/CLAUDE.md renaming for Gate 0 branch B (needs owner approval
-  first; done as part of the retarget decision, not preemptively).
 
 ## Risks
 
-1. **Gate 0 mismatch** (likeliest): premise says Onion, hardware likely
-   runs muOS/Knulli/ROCKNIX/stock → retarget decision blocks naming but
-   not the bring-up shape.
+1. **muOS release drift** — Task Toolkit location and boot hooks have
+   moved across muOS versions; recon pins the installed version before
+   anything ships.
 2. **SD mount noexec** — bundled binaries may need to live on a
    different partition; exec probe answers this.
 3. **RetroArch save compression enabled** → `.srm` files are RZIP
    containers → quarantine path until Phase 3 codec.
 4. **musl vs glibc / kernel drift** — static Brick binaries should not
    care; the validation protocol proves it rather than assumes.
-5. **Boot-hook model unknown** — Onion's launch model differs from
-   NextUI's single `auto.sh`; muOS/Knulli have their own conventions;
-   recon captures candidates.
-6. **Clock/TLS** — same trap as the Brick; preflight carries the check
+5. **Clock/TLS** — same trap as the Brick; preflight carries the check
    over.
 
 ## Coordination (parallel sessions)
 
-This sprint owns `src/platforms/onion/**`, `config/platform_maps/
-onion.json`, `tests/unit/onion/**`, and this spec/summary. It runs
-alongside RetroDeck 2.1, the UI design system, and NextUI conflict UI
-1.5 — all disjoint. The single shared touch (gate.sh shellcheck list)
-lands at implementation time and is called out in the PR.
+This sprint owns `src/platforms/muos/**`, `config/platform_maps/
+muos.json`, `tests/unit/muos/**`, and this spec/summary, plus the Gate 0
+retarget edits to `docs/roadmap.md` and `CLAUDE.md` (surgical,
+owner-directed 2026-07-09). It runs alongside RetroDeck 2.1, the UI
+design system, and NextUI conflict UI 1.5 — all otherwise disjoint. The
+single shared code touch (gate.sh shellcheck list) lands at
+implementation time and is called out in the PR.
 
 ## Reference specs
 
-- `docs/sprints/sprint-3.1-anbernic-kickoff.md` (brief)
+- `docs/sprints/sprint-3.1-anbernic-kickoff.md` (brief; platform
+  premise corrected by Gate 0)
 - `docs/platform/nextui-field-notes.md` (ALWAYS in scope)
 - `docs/sprints/sprint-1.1-1.3-summary.md` (bring-up precedent + defect
   history)

@@ -1,12 +1,12 @@
 #!/bin/sh
 # shellcheck shell=ash  # BusyBox ash target — local is supported
 # shellcheck disable=SC3043
-# Unit tests for src/platforms/onion/recon_device.sh (Sprint 3.1 recon).
+# Unit tests for src/platforms/muos/recon_device.sh (Sprint 3.1 recon).
 set -e
 
 TESTS_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PROJECT_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
-RECON="$PROJECT_ROOT/src/platforms/onion/recon_device.sh"
+RECON="$PROJECT_ROOT/src/platforms/muos/recon_device.sh"
 
 passed=0
 failed=0

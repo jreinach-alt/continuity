@@ -8,9 +8,11 @@ Continuity is a cross-platform SRAM save sync tool for retro gaming handhelds an
 
 **Target platforms:**
 - TrimUI Brick (NextUI) — primary, BusyBox ash
-- Anbernic devices (Onion OS) — BusyBox ash
+- Anbernic RG40XX V (muOS) — BusyBox ash
 - Steam Deck (RetroDeck) — full Linux
 - Android (RetroArch) — Java/Kotlin
+- Miyoo Mini family (Onion OS) — future; deferred until Onion-capable
+  hardware is in the fleet (ARMv7 — new cross-compile target)
 
 ## Repository Structure
 
@@ -19,7 +21,7 @@ src/
   core/           — Shared sync engine logic (shell, portable)
   platforms/
     nextui/       — TrimUI Brick platform client + PAK
-    onion/        — Onion OS platform client
+    muos/         — Anbernic RG40XX V (muOS) platform client
     retrodeck/    — Steam Deck / RetroDeck client
     android/      — Android RetroArch client
   enrollment/     — Device setup and credential import
@@ -27,7 +29,7 @@ config/
   system_taxonomy.json      — Canonical system names and aliases
   platform_maps/            — Per-platform path mappings
     nextui.json
-    onion.json
+    onion.json    — future-platform placeholder (Onion OS deferred)
     retrodeck.json
     retroarch_android.json
 docs/
@@ -192,7 +194,7 @@ Required sections: Files Created, Files Modified, Tests Written, Deviations from
 
 ### BusyBox Ash Compatibility
 
-The TrimUI Brick and Onion OS devices run BusyBox ash. Avoid:
+The TrimUI Brick and Anbernic (muOS) devices run BusyBox ash. Avoid:
 
 | Construct | Use Instead |
 |-----------|-------------|
@@ -213,7 +215,7 @@ The TrimUI Brick and Onion OS devices run BusyBox ash. Avoid:
 ### Platform-Specific Code
 
 Each platform client in `src/platforms/<name>/` can use platform-native constructs:
-- **nextui, onion:** Must be BusyBox ash compatible
+- **nextui, muos:** Must be BusyBox ash compatible
 - **retrodeck:** May use bash, systemd, inotifywait
 - **android:** Java/Kotlin, standard Android APIs
 
@@ -234,7 +236,7 @@ Each platform client in `src/platforms/<name>/` can use platform-native construc
 Format: `<type>(<scope>): <short description>`
 
 Types: `feat`, `fix`, `test`, `docs`, `refactor`, `build`, `chore`
-Scopes: `core`, `nextui`, `onion`, `retrodeck`, `android`, `enrollment`, `config`, `tests`, `scripts`, `docs`, `tools`, `release`
+Scopes: `core`, `nextui`, `muos`, `retrodeck`, `android`, `enrollment`, `config`, `tests`, `scripts`, `docs`, `tools`, `release` (`onion` reserved for the deferred Onion OS platform)
 
 ### Testing Requirements
 

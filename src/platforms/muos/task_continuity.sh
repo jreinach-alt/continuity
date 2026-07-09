@@ -55,15 +55,40 @@ tc_daemon_running() {
 }
 
 tc_start_daemon() {
-    local daemon
+    local daemon ticks
     daemon="$CONTINUITY_APP_DIR/scripts/continuity_daemon.sh"
     if [ ! -f "$daemon" ]; then
         tc_say "ERROR: daemon script missing: $daemon"
         return 1
     fi
     tc_say "Starting Continuity daemon..."
-    sh "$daemon" </dev/null >/dev/null 2>&1 &
-    return 0
+    # muOS's task runner kills the task's process group when the task
+    # exits — a plain backgrounded child dies with it (field-found on
+    # the RG40XX V, build 0.1.0-muos-20260709-2236: enrollment worked,
+    # the daemon silently died, the cold-start push never happened).
+    # setsid detaches the daemon into its own session and process
+    # group; nohup is the fallback shield on a userland without it.
+    if command -v setsid >/dev/null 2>&1; then
+        setsid sh "$daemon" </dev/null >/dev/null 2>&1 &
+    elif command -v nohup >/dev/null 2>&1; then
+        nohup sh "$daemon" </dev/null >/dev/null 2>&1 &
+    else
+        sh "$daemon" </dev/null >/dev/null 2>&1 &
+    fi
+    # Trust nothing: the daemon writes its PID file within a couple of
+    # seconds of a healthy start. Verify and report the truth — a
+    # daemon that dies on task exit must never be silent again.
+    ticks="${TC_START_WAIT_TICKS:-6}"
+    while [ "$ticks" -gt 0 ]; do
+        if tc_daemon_running; then
+            tc_say "Daemon confirmed alive (PID $(cat "$CONTINUITY_PID_FILE" 2>/dev/null))"
+            return 0
+        fi
+        sleep 1
+        ticks=$((ticks - 1))
+    done
+    tc_say "Daemon did NOT stay up after start — see .continuity/continuity.log"
+    return 1
 }
 
 tc_status() {

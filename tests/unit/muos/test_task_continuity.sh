@@ -124,10 +124,16 @@ assert_contains "launch breadcrumb accumulates" "$SD/.continuity/launch.log" "ta
 
 printf '{\n  "repo_url": "%s",\n  "pat": "unused-for-file-remote",\n  "device_name": "test-rg40xx"\n}\n' \
     "$REMOTE" > "$SD/setup.json"
-# stub the daemon so "start" is observable without a real poll loop
+# stub the daemon so "start" is observable without a real poll loop —
+# it behaves like a healthy daemon: writes its PID file, then lingers
+# long enough for tc_start_daemon's liveness verification to see it.
 mv "$APP/scripts/continuity_daemon.sh" "$APP/scripts/continuity_daemon.real"
-printf '#!/bin/sh\nprintf started > "%s/daemon_started"\n' "$TEST_TMPDIR" \
-    > "$APP/scripts/continuity_daemon.sh"
+cat > "$APP/scripts/continuity_daemon.sh" <<EOF
+#!/bin/sh
+printf '%s\n' "\$\$" > "\${CONTINUITY_PID_FILE:-$TEST_TMPDIR/continuity.pid}"
+printf started > "$TEST_TMPDIR/daemon_started"
+sleep 10
+EOF
 chmod +x "$APP/scripts/continuity_daemon.sh"
 
 rc=0
@@ -135,6 +141,7 @@ out=$(run_task 2>&1) || rc=$?
 printf '%s\n' "$out" > "$TEST_TMPDIR/out3.txt"
 assert_eq "enrollment run exits 0" "0" "$rc"
 assert_contains "enrollment completion named" "$TEST_TMPDIR/out3.txt" "Enrollment complete: test-rg40xx"
+assert_contains "daemon liveness verified after start" "$TEST_TMPDIR/out3.txt" "Daemon confirmed alive"
 assert_eq "setup.json deleted after enrollment" "no" "$([ -f "$SD/setup.json" ] && printf yes || printf no)"
 assert_file_exists "device name persisted" "$SD/.continuity/repo/.continuity/device_name"
 assert_eq "device name content" "test-rg40xx" "$(cat "$SD/.continuity/repo/.continuity/device_name")"
@@ -146,12 +153,22 @@ assert_file_exists "daemon started after enrollment" "$TEST_TMPDIR/daemon_starte
 
 # ── 4: enrolled + not running → starts daemon; running → status only ─
 
-rm -f "$TEST_TMPDIR/daemon_started"
+rm -f "$TEST_TMPDIR/daemon_started" "$TEST_TMPDIR/continuity.pid"
 rc=0
 out=$(run_task 2>&1) || rc=$?
 printf '%s\n' "$out" > "$TEST_TMPDIR/out4.txt"
 assert_eq "enrolled rerun exits 0" "0" "$rc"
 assert_contains "daemon start attempted" "$TEST_TMPDIR/out4.txt" "Starting Continuity daemon"
+
+# a dead daemon must be reported loudly, not silently (the field
+# failure: muOS killed the task's process group and nothing said so)
+printf '#!/bin/sh\nexit 0\n' > "$APP/scripts/continuity_daemon.sh"
+chmod +x "$APP/scripts/continuity_daemon.sh"
+rm -f "$TEST_TMPDIR/continuity.pid"
+rc=0
+out=$(run_task TC_START_WAIT_TICKS=1 2>&1) || rc=$?
+printf '%s\n' "$out" > "$TEST_TMPDIR/out4b.txt"
+assert_contains "dead daemon reported loudly" "$TEST_TMPDIR/out4b.txt" "did NOT stay up"
 
 # fake a live daemon PID (this test process)
 printf '%s\n' "$$" > "$TEST_TMPDIR/continuity.pid"

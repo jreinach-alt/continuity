@@ -333,6 +333,26 @@ pm_rom_fullname() {
     done
 }
 
+# _pm_canonicalize_filename <canonical_system> <filename> — canonical
+# filename for a save (strip save ext -> ROM-anchor/heuristic basename ->
+# canonical extension: .srm for SRAM classes, .rtc kept). Non-save names
+# pass through unchanged. Shared by pm_device_to_canonical (device side)
+# and pm_repo_canonicalize (migration, repo side).
+_pm_canonicalize_filename() {
+    local system filename stem canon_ext base
+    system="$1"
+    filename="$2"
+    case "$filename" in
+        *.rtc) stem=${filename%.rtc}; canon_ext=".rtc" ;;
+        *.srm) stem=${filename%.srm}; canon_ext=".srm" ;;
+        *.sav) stem=${filename%.sav}; canon_ext=".srm" ;;
+        *)     printf '%s\n' "$filename"; return 0 ;;
+    esac
+    base=$(pm_rom_match_basename "$system" "$stem")
+    [ -n "$base" ] || base=$(pm_rom_ext_strip "$stem")
+    printf '%s%s\n' "$base" "$canon_ext"
+}
+
 # pm_device_to_canonical <device_path> — device save path -> canonical repo
 # path (<system>/<basename>.srm, raw). Sniffs the container first: real
 # RZIP magic quarantines (rc 3, nothing stored). Legacy passthrough when
@@ -341,7 +361,7 @@ pm_rom_fullname() {
 #   1 -> unknown system directory
 #   3 -> compressed save quarantined (prints nothing)
 pm_device_to_canonical() {
-    local device_path repo_dirpath system filename stem canon_ext base
+    local device_path repo_dirpath system filename
     device_path="$1"
 
     repo_dirpath=$(pm_local_to_repo "$device_path") || return 1
@@ -359,17 +379,23 @@ pm_device_to_canonical() {
         return 0
     fi
 
-    case "$filename" in
-        *.rtc) stem=${filename%.rtc}; canon_ext=".rtc" ;;
-        *.srm) stem=${filename%.srm}; canon_ext=".srm" ;;
-        *.sav) stem=${filename%.sav}; canon_ext=".srm" ;;
-        *)     printf '%s\n' "$repo_dirpath"; return 0 ;;
-    esac
+    printf '%s/%s\n' "$system" "$(_pm_canonicalize_filename "$system" "$filename")"
+    return 0
+}
 
-    base=$(pm_rom_match_basename "$system" "$stem")
-    [ -n "$base" ] || base=$(pm_rom_ext_strip "$stem")
-
-    printf '%s/%s%s\n' "$system" "$base" "$canon_ext"
+# pm_repo_canonicalize <repo_relative_path> — canonical repo path for a
+# device-natively-named repo file. Used by migrate_repo.sh: the file is
+# already under its canonical system directory, so only the basename is
+# rewritten. ROM-anchored when CONTINUITY_ROMS_ROOT is available, else the
+# 2-4 char heuristic. Always canonicalizes (migration intent) — it does
+# not consult pm_canon_enabled. An already-canonical path is returned
+# unchanged (idempotent). Container sniffing is the caller's job.
+pm_repo_canonicalize() {
+    local repo_path system filename
+    repo_path="$1"
+    system=$(printf '%s' "$repo_path" | sed 's|/.*||')
+    filename=$(printf '%s' "$repo_path" | sed 's|.*/||')
+    printf '%s/%s\n' "$system" "$(_pm_canonicalize_filename "$system" "$filename")"
     return 0
 }
 

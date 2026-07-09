@@ -183,7 +183,7 @@ cs_run() {
             rc_map=0
             repo_path=$(pm_device_to_canonical "$local_path" 2>/dev/null) || rc_map=$?
             if [ "$rc_map" -eq 3 ]; then
-                # Compressed save quarantined (mapper logged the named line).
+                pal_log "warn" "Cold start: compressed save skipped — set save format to uncompressed: $local_path"
                 continue
             fi
             if [ "$rc_map" -ne 0 ] || [ -z "$repo_path" ]; then

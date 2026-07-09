@@ -151,7 +151,7 @@ sb_run() {
             rc_map=0
             repo_path=$(pm_device_to_canonical "$device_path" 2>/dev/null) || rc_map=$?
             if [ "$rc_map" -eq 3 ]; then
-                # Compressed save quarantined (mapper logged the named line).
+                pal_log "warn" "Stale boot: compressed save skipped — set save format to uncompressed: $device_path"
                 continue
             fi
             if [ "$rc_map" -ne 0 ] || [ -z "$repo_path" ]; then

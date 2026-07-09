@@ -259,6 +259,8 @@ Mirrors NextUI Phase 1 (Sprints 1.1–1.3 compressed, minus conflict UI):
 | `tests/unit/muos/test_enroll_sd_card.sh` | create (adapted) |
 | `tests/unit/muos/test_preflight.sh` | create (adapted) |
 | `scripts/gate.sh` | add `src/platforms/muos/*.sh` to the full-tier shellcheck list (small shared edit — coordinate at merge) |
+| `scripts/build_muos_app.sh` | create — packaging (owner-approved addition 2026-07-09): stages the card layout from the VERIFIED PAK binaries, checksums manifest, versioned zip |
+| `tests/unit/muos/test_build_muos_app.sh` | create (with the above) |
 | `docs/platform/muos-field-notes.md` | create during hardware validation |
 | `docs/sprints/sprint-3.1-summary.md` | update at completion |
 

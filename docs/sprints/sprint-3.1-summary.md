@@ -77,23 +77,33 @@ qemu/container leg of acceptance I1 is done; the on-device leg
 (exec on real kernel, live TLS clone, transport-helper re-exec) is
 what hardware validation covers.
 
+## Packaging (owner-approved file-table addition, 2026-07-09)
+
+`scripts/build_muos_app.sh` + `tests/unit/muos/test_build_muos_app.sh`
+(28 assertions). Stages the card-mirroring layout (`.continuity/app/**`
++ `MUOS/task/Continuity.sh` + `MUOS/task/Continuity Recon.sh`) from the
+VERIFIED PAK binaries (byte-compare enforced at build; checksums
+manifest for on-device preflight verification; minute-granular version
+stamp; CRLF guard; zip from the staging root so Extract-All onto the
+card root installs everything). Staging/zip live under gitignored
+`build/` — only `build/Continuity.pak` stays a committed artifact.
+First real build `0.1.0-muos-20260709-2236` (13 MB): staged git and
+busybox byte-identical to the hardware-validated PAK set, git runs
+under qemu, busybox passes the 69-check matrix. The live-TLS leg runs
+on-device (preflight ls-remote) — the container's TLS proxy makes an
+emulated live-clone unrepresentative and the bytes already passed it
+when the PAK shipped.
+
 ## Deviations from Spec
 
 - The spec's file table named a `<boot-hook installer>`; what shipped
   is the Task Toolkit launcher (manual start + status), per the spec's
   own decision to defer boot-hook wiring to the first validation round
   (preflight's boot-hook lines gather the data for it).
-- **Out-of-table gap flagged to owner:** the spec's delivery item
-  ("versioned zip built from the verified tree") needs a packaging
-  script (`scripts/build_muos_app.sh` analogous to `build_pak.sh`),
-  which is NOT in the approved file table — awaiting owner approval
-  before creating it.
 
 ## Open Items
 
-1. **Owner: approve the packaging script** (file-table addition), then
-   package + deliver the app zip for hardware validation.
-2. **Hardware validation round 1** (needs the device): binaries execute
+1. **Hardware validation round 1** (needs the device): binaries execute
    on the real kernel; live TLS clone via bundled git; enrollment
    (acceptance I4); save round-trip (I5); boot-hook decision from the
    preflight's captured init data (then wire daemon autostart).

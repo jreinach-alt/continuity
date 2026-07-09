@@ -1,11 +1,13 @@
 # Continuity UI Design System — Cross-Platform Spec
 
-**Status:** Draft for approval — 2026-07-09. The umbrella design gate for
-every platform's user-facing surface (NextUI PAK 1.5, RetroDeck 2.1/2.2,
-Onion 3.1, Android 3.2, any future desktop). The conflict-resolution
-experience (`docs/design/conflict-resolution-experience.md`) is the first
-flow that slots *under* this system. No claim here overrides that doc; this
-defines the shared language it and every other surface speak.
+**Status:** Approved 2026-07-09 (all four §7 decisions accepted: normative
+status semantics; color-never-alone; scope = interaction/IA/content now
+with visual deferred; gates the platform UI sprints). The umbrella design
+gate for every platform's user-facing surface (NextUI PAK 1.5, RetroDeck
+2.1/2.2, Onion 3.1, Android 3.2, any future desktop). The conflict-
+resolution experience (`docs/design/conflict-resolution-experience.md`) is
+the first flow that slots *under* this system. No claim here overrides that
+doc; this defines the shared language it and every other surface speak.
 
 **Goal:** make Continuity feel like *one product* whether the user is
 looking at a single line of text on a TrimUI Brick, a desktop window on a
@@ -122,7 +124,7 @@ Tier-0 paging (`Y=next`) and its Tier-2 list form.
   constrains what those primitives render, and asks one tweak of existing
   code: pair every status color with its word (§3).
 
-## 7. Open decisions (for approval)
+## 7. Decisions (all accepted 2026-07-09)
 
 1. **Normative status semantics (§3)** — lock green/yellow/red + the words
    `Synced`/`Queued`/`Offline`/`Conflict`/`Error` across all platforms?

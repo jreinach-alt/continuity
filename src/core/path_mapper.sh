@@ -8,6 +8,7 @@
 # Module-level variables (set by pm_load_platform_map)
 _pm_forward_map=""   # local_dir=canonical (one per line)
 _pm_reverse_map=""   # canonical=local_dir (one per line)
+_pm_rom_map=""       # canonical=rom_dir (one per line; v2.1 rom_paths)
 _pm_loaded=""        # non-empty if map is loaded
 _pm_name_style=""    # save_name_style: minui | retroarch | generic (v2 maps)
 _pm_container=""     # save_container: raw | rzip (v2 maps)
@@ -28,24 +29,33 @@ pm_load_platform_map() {
 
     _pm_forward_map=""
     _pm_reverse_map=""
+    _pm_rom_map=""
     _pm_name_style=""
     _pm_container=""
 
-    # Extract system_paths block and parse key=value pairs
+    # Extract system_paths (and optional v2.1 rom_paths) blocks and parse
+    # their "canonical": "dir" pairs. rom_paths exists for platforms whose
+    # ROM folder names differ from their save folder names (muOS: saves
+    # per-CORE, ROMs per-system) — absent, pm_rom_dir falls back to the
+    # system_paths value exactly as before.
     local in_block
-    in_block=0
+    in_block=""
     while IFS= read -r line; do
         case "$line" in
             *\"system_paths\"*)
-                in_block=1
+                in_block="sys"
+                continue
+                ;;
+            *\"rom_paths\"*)
+                in_block="rom"
                 continue
                 ;;
         esac
-        if [ "$in_block" -eq 1 ]; then
+        if [ -n "$in_block" ]; then
             # End of block
             case "$line" in
                 *"}"*)
-                    in_block=0
+                    in_block=""
                     continue
                     ;;
             esac
@@ -56,12 +66,18 @@ pm_load_platform_map() {
             local local_dir
             local_dir=$(printf '%s' "$line" | sed -n 's/.*"\([^"]*\)" *: *"\([^"]*\)".*/\2/p')
             if [ -n "$canonical" ] && [ -n "$local_dir" ]; then
-                # Forward: local_dir -> canonical
-                _pm_forward_map="$_pm_forward_map
-$local_dir=$canonical"
-                # Reverse: canonical -> local_dir
-                _pm_reverse_map="$_pm_reverse_map
+                if [ "$in_block" = "rom" ]; then
+                    # canonical -> ROM directory name
+                    _pm_rom_map="$_pm_rom_map
 $canonical=$local_dir"
+                else
+                    # Forward: local_dir -> canonical
+                    _pm_forward_map="$_pm_forward_map
+$local_dir=$canonical"
+                    # Reverse: canonical -> local_dir
+                    _pm_reverse_map="$_pm_reverse_map
+$canonical=$local_dir"
+                fi
             fi
         fi
     done < "$map_file"
@@ -69,6 +85,7 @@ $canonical=$local_dir"
     # Trim leading newline
     _pm_forward_map=$(printf '%s' "$_pm_forward_map" | sed '/^$/d')
     _pm_reverse_map=$(printf '%s' "$_pm_reverse_map" | sed '/^$/d')
+    _pm_rom_map=$(printf '%s' "$_pm_rom_map" | sed '/^$/d')
 
     if [ -z "$_pm_forward_map" ]; then
         pal_log "error" "No system_paths found in platform map: $map_file"
@@ -112,9 +129,12 @@ pm_local_to_repo() {
         return 1
     fi
 
-    # Look up canonical name from forward map
+    # Look up canonical name from forward map. A save dir shared by
+    # several systems (muOS per-core dirs: gb+gbc under Gambatte) has
+    # multiple forward entries — deterministically take the FIRST listed;
+    # pm_device_to_canonical refines the choice by ROM anchoring.
     local canonical
-    canonical=$(printf '%s\n' "$_pm_forward_map" | grep "^${system_dir}=" | sed 's/^[^=]*=//')
+    canonical=$(printf '%s\n' "$_pm_forward_map" | grep "^${system_dir}=" | head -1 | sed 's/^[^=]*=//')
 
     if [ -z "$canonical" ]; then
         pal_log "warn" "Unknown system directory: $system_dir"
@@ -123,6 +143,14 @@ pm_local_to_repo() {
 
     printf '%s/%s\n' "$canonical" "$filename"
     return 0
+}
+
+# pm_canonicals_for_dir <local_dir> — every canonical system mapped to a
+# local save directory, one per line, in map order. Usually one; more
+# when a platform's save layout is coarser than system identity (muOS
+# per-core dirs).
+pm_canonicals_for_dir() {
+    printf '%s\n' "$_pm_forward_map" | grep "^${1}=" | sed 's/^[^=]*=//'
 }
 
 # pm_repo_to_local — convert a repo-relative path to an absolute local path
@@ -160,13 +188,15 @@ pm_repo_to_local() {
 # pm_list_watched_dirs — list every local save directory to monitor
 # Prints one absolute path per line, constructed from CONTINUITY_SAVES_ROOT
 # and each platform-specific system directory. Does not check existence.
+# Deduplicated preserving map order: a shared save dir (muOS per-core
+# layout) must not be scanned twice.
 pm_list_watched_dirs() {
     printf '%s\n' "$_pm_reverse_map" | while IFS= read -r entry; do
         [ -z "$entry" ] && continue
         local local_dir
         local_dir=$(printf '%s' "$entry" | sed 's/^[^=]*=//')
         printf '%s/%s\n' "$CONTINUITY_SAVES_ROOT" "$local_dir"
-    done
+    done | awk '!seen[$0]++'
 }
 
 # ── Save states (opaque backup) ──────────────────────────────────────
@@ -272,13 +302,20 @@ pm_container_class() {
 }
 
 # pm_rom_dir <canonical_system> — absolute ROM directory for a system.
-# Tries CONTINUITY_ROMS_ROOT/<local_dir> then the NextUI long-folder form
+# A v2.1 rom_paths entry wins (platforms whose ROM folders are not named
+# like their save folders — muOS); otherwise tries
+# CONTINUITY_ROMS_ROOT/<local_dir> then the NextUI long-folder form
 # CONTINUITY_ROMS_ROOT/*(<local_dir>). Returns 1 if none exists.
 pm_rom_dir() {
-    local canonical local_dir cand
+    local canonical local_dir cand rom_dir
     canonical="$1"
     [ -n "$CONTINUITY_ROMS_ROOT" ] || return 1
-    local_dir=$(printf '%s\n' "$_pm_reverse_map" | grep "^${canonical}=" | sed 's/^[^=]*=//')
+    rom_dir=$(printf '%s\n' "$_pm_rom_map" | grep "^${canonical}=" | head -1 | sed 's/^[^=]*=//')
+    if [ -n "$rom_dir" ] && [ -d "$CONTINUITY_ROMS_ROOT/$rom_dir" ]; then
+        printf '%s\n' "$CONTINUITY_ROMS_ROOT/$rom_dir"
+        return 0
+    fi
+    local_dir=$(printf '%s\n' "$_pm_reverse_map" | grep "^${canonical}=" | head -1 | sed 's/^[^=]*=//')
     [ -n "$local_dir" ] || return 1
     if [ -d "$CONTINUITY_ROMS_ROOT/$local_dir" ]; then
         printf '%s\n' "$CONTINUITY_ROMS_ROOT/$local_dir"
@@ -377,6 +414,35 @@ pm_device_to_canonical() {
     if ! pm_canon_enabled; then
         printf '%s\n' "$repo_dirpath"
         return 0
+    fi
+
+    # Shared save dir (several canonicals map to it — muOS per-core
+    # layout): resolve the true system by ROM anchor. The candidate whose
+    # ROM directory contains a matching game wins; no match anywhere
+    # falls through to the first-listed candidate (already in $system)
+    # with the ext-strip heuristic, exactly like the single-system case.
+    local system_dir candidates n stem cand base
+    system_dir=$(printf '%s' "$device_path" | sed "s|^$CONTINUITY_SAVES_ROOT/||" | sed 's|/[^/]*$||')
+    candidates=$(pm_canonicals_for_dir "$system_dir")
+    n=$(printf '%s\n' "$candidates" | grep -c .)
+    if [ "$n" -gt 1 ]; then
+        case "$filename" in
+            *.rtc) stem=${filename%.rtc} ;;
+            *.srm) stem=${filename%.srm} ;;
+            *.sav) stem=${filename%.sav} ;;
+            *)     stem="" ;;
+        esac
+        if [ -n "$stem" ]; then
+            # Canonical names are snake_case (no whitespace) — plain
+            # word-splitting iteration is safe.
+            for cand in $candidates; do
+                base=$(pm_rom_match_basename "$cand" "$stem")
+                if [ -n "$base" ]; then
+                    system="$cand"
+                    break
+                fi
+            done
+        fi
     fi
 
     printf '%s/%s\n' "$system" "$(_pm_canonicalize_filename "$system" "$filename")"

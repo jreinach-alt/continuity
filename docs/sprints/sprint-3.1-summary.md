@@ -1,100 +1,110 @@
-# Sprint 3.1 — Summary (kickoff stage)
+# Sprint 3.1 — Summary
 
-**Status:** Recon phase shipped; Gate 0 RESOLVED (muOS); spec DRAFT
-awaiting the on-device recon report + owner approval. NO implementation
-has begun (spec-gated).
-**Session:** 2026-07-09 (Fable kickoff session).
+**Status:** Phase I code COMPLETE (spec approved 2026-07-09; core
+extension approved same day); hardware validation pending — needs the
+packaged app on the RG40XX V.
+**Sessions:** 2026-07-09 (Fable kickoff → recon → spec → Phase I).
 **Branch:** `claude/sprint-3.1-anbernic-kickoff-abjqjc`
 
-## Gate 0 resolution (2026-07-09)
+## Gate 0 / recon history (earlier same-session)
 
-Desk research: **no Onion OS build exists for H700/Anbernic hardware**
-(Onion targets the Miyoo Mini family, ARMv7; H700 is an open feature
-request — OnionUI/Onion discussion #1697). Owner Q&A confirmed the
-device in hand is an **RG40XX V with working WiFi**, and the owner then
-identified the installed firmware: **muOS**. Sprint retargeted
-accordingly (platform id `muos`); **Onion OS stays on the roadmap as a
-future platform** — owner wants it, but the current fleet has no
-Onion-capable hardware to validate against. The owner has **no shell
-access**; on-device recon ships as a muOS Task Toolkit script
-(`MUOS/task/`, tap-to-run).
+Onion OS has no H700 build → owner confirmed device is an RG40XX V
+running **muOS** → sprint retargeted (Onion deferred to roadmap 3.3);
+recon ran via Task Toolkit and resolved every spec blank except the
+boot hook. The device's own version files disagree (Banana vs Pixie) →
+owner requirement: **feature-probe, never version-gate** (spec Version
+Support Policy, acceptance I9). Recon probe defect fixed (exec-probe
+argv0 misread — recon-2).
 
-## Files Created
+## Files Created (Phase I)
 
-- `src/platforms/muos/recon_device.sh` — one-shot, read-only on-device
-  recon for the RG40XX V (firmware/version fingerprint, arch/libc ELF
-  decode, exec-semantics probes on the SD mount, real-save byte checks
-  incl. RZIP magic, RetroArch config, boot-hook candidates,
-  network/clock; secrets masked). Runs under `busybox ash`; every probe
-  individually guarded (deliberate `set -e` deviation, documented in
-  the header). Delivered via muOS Task Toolkit — no shell needed.
-- `tests/unit/muos/test_recon_device.sh` — 25 assertions: ELF
-  classifier (aarch64/arm32/non-ELF/tiny/missing + minimal-od octal
-  fallback), RZIP magic detection, full run against a fixture SD tree
-  (exit 0, no artifacts left, all key sections, PAT masked to length,
-  secret never in report, overwrite semantics, default output path).
-- `docs/sprints/sprint-3.1-spec.md` — the sprint spec (DRAFT).
-
-(Both platform files were first created under `onion/` from the brief's
-premise and moved to `muos/` when Gate 0 resolved — same session.)
+- `src/platforms/muos/pal_muos.sh` — PAL with existence-probed fallback
+  chains (`/run/muos/storage/save/*` → `MUOS/save/*`; `/mnt/union/ROMS`
+  → `ROMS`), env-defaulted seams (`CONTINUITY_MUOS_RUNROOT/_UNION`),
+  git env wiring, logged resolutions.
+- `src/platforms/muos/continuity_daemon.sh` — adapted from NextUI
+  (PID lifecycle, vendored-busybox fail-open re-exec, module loading,
+  enrollment check with network wait, boot dispatch, 30s poll loop,
+  SIGTERM final push). App dir replaces PAK dir; log at
+  `/mnt/mmc/.continuity/continuity.log`.
+- `src/platforms/muos/enroll_sd_card.sh` — adapted (setup.json at the
+  SD1 exFAT root; enrollment lock; hang-proof git env).
+- `src/platforms/muos/preflight.sh` — adapted + muOS additions: BOTH
+  version signals recorded verbatim (I9), path-resolution surfacing,
+  boot-hook recon lines (init.d + /opt/muos/script), Snes9x mapping
+  probe.
+- `src/platforms/muos/task_continuity.sh` — Task Toolkit entry
+  (`MUOS/task/Continuity.sh`): breadcrumb-always launch log, preflight
+  → CONTINUITY_DIAGNOSTIC.txt at card root, state-driven dispatch
+  (guidance / supervised enrollment / daemon start / status). Never
+  uses the vendored interpreter (bootstrap stays device-native).
+- `config/platform_maps/muos.json` — schema **2.1**: per-core
+  `system_paths` (gb+gbc→Gambatte, gba→mGBA, snes→Snes9x,
+  n64→Mupen64Plus-Next, ps1→PCSX-ReARMed — device-proven cores only),
+  `rom_paths` to muOS ROM folder names, `retroarch` name style, raw
+  container.
+- `tests/unit/muos/`: test_pal_muos (18), test_continuity_daemon (83),
+  test_enroll_sd_card (20), test_preflight (45 — incl. I9 version-
+  signal and boot-hook assertions), test_task_continuity (19 — incl. a
+  full real enrollment through the task against a bare git remote),
+  test_recon_device (25).
+- `tests/unit/core/test_path_mapper_rom_paths.sh` (21) — the schema-2.1
+  extension: GB/GBC disambiguation through the shared Gambatte dir
+  (mirrors the device's real files), rom_paths precedence, dedupe,
+  fallbacks, v2.0 backward compatibility.
 
 ## Files Modified
 
-- `docs/roadmap.md` — Sprint 3.1 retitled to muOS client (RG40XX V);
-  Onion OS moved to a deferred outline (no test hardware); save-state
-  section's platform note corrected.
-- `CLAUDE.md` — target-platform line, repo-structure listing, and
-  commit scopes updated for `muos` (owner-directed retarget).
+- `src/core/path_mapper.sh` — **owner-approved core extension**
+  (schema 2.1): optional `rom_paths` block parse; `pm_rom_dir` prefers
+  it; `pm_device_to_canonical` resolves shared save dirs by ROM anchor;
+  `pm_canonicals_for_dir` helper; `pm_list_watched_dirs` dedupes;
+  fixed a latent nondeterminism (multi-line grep) in `pm_local_to_repo`
+  for duplicate-value maps. All 100 pre-existing mapper assertions
+  unchanged and green.
+- `scripts/gate.sh` — full-tier shellcheck now covers
+  `src/platforms/muos/*.sh` (the coordinated shared edit from the
+  spec's file table).
+- Spec/summary docs.
 
-## Tests Written
+## Test State
 
-`tests/unit/muos/test_recon_device.sh` (25 assertions, green under
-`busybox ash`, exercised by `scripts/gate.sh full` in both privilege
-passes).
+`scripts/gate.sh full` PASSED end-to-end in the dev container:
+44 test files green as current user AND as `nobody`; shipped-PAK
+checksums verified; busybox 69-check matrix under qemu; bundled git
+runs under qemu (qemu-user-static installed this session). The
+qemu/container leg of acceptance I1 is done; the on-device leg
+(exec on real kernel, live TLS clone, transport-helper re-exec) is
+what hardware validation covers.
 
 ## Deviations from Spec
 
-The spec itself is the deliverable; one house-style deviation inside
-the recon script (`set -e` omitted), documented and justified in the
-script header and the spec. The kickoff brief's platform premise
-("Onion OS on the RG40XX V") was corrected by Gate 0 — recorded in the
-spec rather than treated as a deviation.
-
-## Recon results (2026-07-09 — device report analyzed)
-
-Owner ran the recon via Task Toolkit on the first try. Full findings in
-the spec's "Recon Findings" section; headline: muOS with
-**conflicting version signals** (os-release: 2410 Banana;
-version.txt: 2502.0 Pixie; owner: probably Banana — not updated in a
-while). Owner requirement follows: fleet muOS versions are unknown, so
-the client is **feature-probed, never version-gated** (spec: Version
-Support Policy; acceptance I9). aarch64/glibc/busybox 1.36.1,
-no git/ssh/inotifywait (bundled git + polling daemon, Brick shape),
-**exec-from-SD works** (mount is nosuid,nodev but not noexec), no
-symlinks, `/proc/self/exe` fine, saves per-CORE at
-`/run/muos/storage/save/file/<Core>/<rom>.srm` in confirmed retroarch
-name-style, compression off + real saves byte-checked raw (RZIP risk
-retired), WiFi/DNS/HTTPS/clock all good. Open blank: the user boot
-hook (Task Toolkit manual start is the day-one fallback). Main design
-flag: per-core save dirs vs `system_paths` — likeliest core-escalation
-candidate, analyzed in the spec.
-
-Recon probe defect found via the real report and fixed (recon-2): the
-exec probe's copied binary must be NAMED `busybox` — a multi-call
-binary dispatches on argv[0], so an arbitrary probe name returns
-"applet not found" (rc 127) and reads like a failed exec even though
-the exec succeeded. The heuristic line now distinguishes
-output-produced (exec worked) from silent rc 126/127 (exec failed).
+- The spec's file table named a `<boot-hook installer>`; what shipped
+  is the Task Toolkit launcher (manual start + status), per the spec's
+  own decision to defer boot-hook wiring to the first validation round
+  (preflight's boot-hook lines gather the data for it).
+- **Out-of-table gap flagged to owner:** the spec's delivery item
+  ("versioned zip built from the verified tree") needs a packaging
+  script (`scripts/build_muos_app.sh` analogous to `build_pak.sh`),
+  which is NOT in the approved file table — awaiting owner approval
+  before creating it.
 
 ## Open Items
 
-1. **Owner: approve the Sprint 3.1 spec** (or annotate) — the only
-   remaining blocker.
-2. Implementation (Phase I of the spec) — blocked on 1.
-3. At implementation: add `src/platforms/muos/*.sh` to gate.sh's
-   full-tier shellcheck list (coordinated shared edit); resolve the
-   boot hook in the first validation round (preflight dumps S01muos +
-   /opt/muos/script/).
-4. Roadmap: future Onion sprint needs Onion-capable hardware (Miyoo
-   Mini family, ARMv7 → new cross-compile target) — revisit when the
-   fleet grows.
+1. **Owner: approve the packaging script** (file-table addition), then
+   package + deliver the app zip for hardware validation.
+2. **Hardware validation round 1** (needs the device): binaries execute
+   on the real kernel; live TLS clone via bundled git; enrollment
+   (acceptance I4); save round-trip (I5); boot-hook decision from the
+   preflight's captured init data (then wire daemon autostart).
+3. **Cross-device test with the Brick** (I6) after single-device
+   validation.
+4. Unproven cores (nes, genesis, sms, gg, pce, arcade …) get map
+   entries as the daemon's unknown-dir warnings surface them — never
+   from memory.
+5. Refactor candidate for a future sprint (architecture signal, not
+   3.1): daemon + enroll_sd_card are now near-identical copies in two
+   platform dirs — CLAUDE.md's "two platforms need it → core" rule
+   points at extracting a shared daemon skeleton.
+6. Roadmap: Onion OS deferred as Sprint 3.3 (needs Miyoo-family
+   hardware; new ARMv7 cross-compile target).

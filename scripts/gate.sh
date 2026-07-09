@@ -47,7 +47,8 @@ if command -v shellcheck >/dev/null 2>&1; then
         fi
     else
         shellcheck -x --severity=error \
-            src/core/*.sh src/platforms/nextui/*.sh scripts/*.sh \
+            src/core/*.sh src/platforms/nextui/*.sh src/platforms/muos/*.sh \
+            scripts/*.sh \
             tools/saves-repo/*.sh .githooks/pre-push \
             tests/unit/*/*.sh tests/integration/*.sh tests/fixtures/*.sh
     fi

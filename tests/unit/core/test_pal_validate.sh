@@ -118,5 +118,49 @@ result=0
 pal_validate 2>/dev/null || result=$?
 assert_eq "pal_validate does not call pal_init" "" "$init_called"
 
+# --- Optional pal_ui_* contract (design §6) ---
+
+# None of the four defined (the default) -> valid: fallback path.
+(
+    setup_full_pal
+    result=0
+    pal_validate 2>/dev/null || result=$?
+    assert_eq "no pal_ui_* defined -> valid (fallback)" "0" "$result"
+    printf '%d %d\n' "$passed" "$failed"
+) > "$TEST_TMPDIR/t_ui_none"
+read -r p f < "$TEST_TMPDIR/t_ui_none"
+passed=$((passed + p)); failed=$((failed + f))
+
+# All four defined -> valid.
+(
+    setup_full_pal
+    pal_ui_menu() { :; }
+    pal_ui_message() { :; }
+    pal_ui_confirm() { :; }
+    pal_ui_handoff() { :; }
+    result=0
+    pal_validate 2>/dev/null || result=$?
+    assert_eq "full pal_ui_* set -> valid" "0" "$result"
+    printf '%d %d\n' "$passed" "$failed"
+) > "$TEST_TMPDIR/t_ui_full"
+read -r p f < "$TEST_TMPDIR/t_ui_full"
+passed=$((passed + p)); failed=$((failed + f))
+
+# Partial set (define two, miss two) -> hard error naming the missing ones.
+(
+    setup_full_pal
+    pal_ui_menu() { :; }
+    pal_ui_confirm() { :; }
+    result=0
+    pal_validate 2>"$TEST_TMPDIR/stderr_tmp" || result=$?
+    stderr=$(cat "$TEST_TMPDIR/stderr_tmp")
+    assert_eq "partial pal_ui_* set returns 1" "1" "$result"
+    assert_contains "partial names pal_ui_message()" "pal_ui_message()" "$stderr"
+    assert_contains "partial names pal_ui_handoff()" "pal_ui_handoff()" "$stderr"
+    printf '%d %d\n' "$passed" "$failed"
+) > "$TEST_TMPDIR/t_ui_partial"
+read -r p f < "$TEST_TMPDIR/t_ui_partial"
+passed=$((passed + p)); failed=$((failed + f))
+
 printf '\ntest_pal_validate: %d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

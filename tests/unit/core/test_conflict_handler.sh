@@ -245,8 +245,11 @@ assert_file_exists "ch_preserve_conflict creates .conflict" \
     "$device_b_dir/snes/super_metroid.srm.conflict"
 
 conflict_json=$(cat "$device_b_dir/snes/super_metroid.srm.conflict")
-assert_contains "ch_preserve_conflict .conflict has _schema_version" "$conflict_json" '"_schema_version": "1.0"'
+assert_contains "ch_preserve_conflict .conflict has _schema_version" "$conflict_json" '"_schema_version": "2.0"'
 assert_contains "ch_preserve_conflict .conflict has file" "$conflict_json" '"file": "snes/super_metroid.srm"'
+assert_contains "ch_preserve_conflict .conflict has identity" "$conflict_json" '"identity": "snes/super_metroid"'
+assert_contains "ch_preserve_conflict .conflict has class" "$conflict_json" '"class": "srm"'
+assert_contains "ch_preserve_conflict .conflict has source" "$conflict_json" '"source": "pull"'
 assert_contains "ch_preserve_conflict .conflict has status" "$conflict_json" '"status": "unresolved"'
 
 # AC 3: local_device matches device_name
@@ -697,7 +700,7 @@ env_out=$(setup_committed_conflict "res3")
 device_b_dir=$(printf '%s' "$env_out" | cut -d' ' -f3)
 
 # Rewrite .conflict with local_timestamp > remote_timestamp
-printf '{\n  "_schema_version": "1.0",\n  "file": "snes/super_metroid.srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "2026-03-12T13:00:00Z",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T15:00:00Z",\n  "status": "unresolved"\n}\n' \
+printf '{\n  "_schema_version": "2.0",\n  "file": "snes/super_metroid.srm",\n  "identity": "snes/super_metroid",\n  "class": "srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "2026-03-12T13:00:00Z",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T15:00:00Z",\n  "source": "pull",\n  "status": "unresolved"\n}\n' \
     > "$device_b_dir/snes/super_metroid.srm.conflict"
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" add "snes/super_metroid.srm.conflict" >/dev/null 2>&1
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" commit -m "fix conflict timestamps" >/dev/null 2>&1
@@ -720,7 +723,7 @@ env_out=$(setup_committed_conflict "res4")
 device_b_dir=$(printf '%s' "$env_out" | cut -d' ' -f3)
 
 # Rewrite .conflict with remote_timestamp > local_timestamp
-printf '{\n  "_schema_version": "1.0",\n  "file": "snes/super_metroid.srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "2026-03-12T15:00:00Z",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T13:00:00Z",\n  "status": "unresolved"\n}\n' \
+printf '{\n  "_schema_version": "2.0",\n  "file": "snes/super_metroid.srm",\n  "identity": "snes/super_metroid",\n  "class": "srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "2026-03-12T15:00:00Z",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T13:00:00Z",\n  "source": "pull",\n  "status": "unresolved"\n}\n' \
     > "$device_b_dir/snes/super_metroid.srm.conflict"
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" add "snes/super_metroid.srm.conflict" >/dev/null 2>&1
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" commit -m "fix conflict timestamps" >/dev/null 2>&1
@@ -736,7 +739,7 @@ assert_eq "ch_resolve keep_newest remote-newer: canonical has remote" "remote-by
 env_out=$(setup_committed_conflict "res5")
 device_b_dir=$(printf '%s' "$env_out" | cut -d' ' -f3)
 
-printf '{\n  "_schema_version": "1.0",\n  "file": "snes/super_metroid.srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "2026-03-12T13:00:00Z",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T13:00:00Z",\n  "status": "unresolved"\n}\n' \
+printf '{\n  "_schema_version": "2.0",\n  "file": "snes/super_metroid.srm",\n  "identity": "snes/super_metroid",\n  "class": "srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "2026-03-12T13:00:00Z",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T13:00:00Z",\n  "source": "pull",\n  "status": "unresolved"\n}\n' \
     > "$device_b_dir/snes/super_metroid.srm.conflict"
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" add "snes/super_metroid.srm.conflict" >/dev/null 2>&1
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" commit -m "fix conflict timestamps" >/dev/null 2>&1
@@ -752,7 +755,7 @@ assert_eq "ch_resolve keep_newest equal: canonical has remote (tie)" "remote-byt
 env_out=$(setup_committed_conflict "res5b")
 device_b_dir=$(printf '%s' "$env_out" | cut -d' ' -f3)
 
-printf '{\n  "_schema_version": "1.0",\n  "file": "snes/super_metroid.srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T13:00:00Z",\n  "status": "unresolved"\n}\n' \
+printf '{\n  "_schema_version": "2.0",\n  "file": "snes/super_metroid.srm",\n  "identity": "snes/super_metroid",\n  "class": "srm",\n  "remote_device": "device-a",\n  "remote_timestamp": "",\n  "local_device": "device-b",\n  "local_timestamp": "2026-03-12T13:00:00Z",\n  "source": "pull",\n  "status": "unresolved"\n}\n' \
     > "$device_b_dir/snes/super_metroid.srm.conflict"
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" add "snes/super_metroid.srm.conflict" >/dev/null 2>&1
 "$CONTINUITY_GIT_BIN" -C "$device_b_dir" commit -m "missing remote timestamp" >/dev/null 2>&1

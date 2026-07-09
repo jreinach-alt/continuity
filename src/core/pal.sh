@@ -26,6 +26,25 @@ pal_validate() {
     command -v pal_log >/dev/null 2>&1 || missing="$missing pal_log()"
     command -v pal_get_platform_map >/dev/null 2>&1 || missing="$missing pal_get_platform_map()"
 
+    # Optional conflict-UI contract (design §6): a platform that advertises
+    # conflict UI defines the FULL pal_ui_* set. Defining SOME but not all is
+    # a hard error (a partial contract would break the shared controller mid-
+    # flow); defining NONE is valid — that platform falls back to the digest-
+    # only, resolve-on-another-device path.
+    local ui_defined ui_missing fn
+    ui_defined=""
+    ui_missing=""
+    for fn in pal_ui_menu pal_ui_message pal_ui_confirm pal_ui_handoff; do
+        if command -v "$fn" >/dev/null 2>&1; then
+            ui_defined="yes"
+        else
+            ui_missing="$ui_missing ${fn}()"
+        fi
+    done
+    if [ -n "$ui_defined" ] && [ -n "$ui_missing" ]; then
+        missing="$missing$ui_missing"
+    fi
+
     if [ -n "$missing" ]; then
         printf 'PAL validation failed. Missing:%s\n' "$missing" >&2
         return 1

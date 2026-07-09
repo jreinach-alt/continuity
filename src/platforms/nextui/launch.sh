@@ -243,6 +243,36 @@ scan_raw=$(find "${CONTINUITY_SAVES_ROOT:-/mnt/SDCARD/Saves}" \
 sync
 show_simple "Scan: $scan_watched dirs, $scan_found saves (raw $scan_raw), $scan_states states" 4
 
+# ── Conflict / actions menu (primary entry; extensible) ─────────────
+# The enrolled tool surface: an extensible main menu (menu_ui.sh) whose
+# "Conflicts (N)" row opens the shared resolution controller (conflict_ui.sh)
+# through the NextUI pal_ui_* shims. Sourced lazily so the status path above
+# stays lightweight. Opened only when there is something to act on — a
+# single-row menu on every tap would be noise; when Sprint 1.5b adds the
+# Status / Sync now / Unlink rows, this opens unconditionally (the shell
+# already renders an empty/zero state). The conflict entry is PRIMARY and
+# does not depend on Sprint 1.4's red dot.
+for f in scripts/core/sync_engine.sh scripts/core/cold_start.sh \
+         scripts/core/conflict_handler.sh scripts/core/conflict_ui.sh \
+         scripts/enroll_ui.sh scripts/pal_ui_nextui.sh scripts/menu_ui.sh; do
+    check_module "$f"
+done
+. ./scripts/core/sync_engine.sh
+. ./scripts/core/cold_start.sh
+. ./scripts/core/conflict_handler.sh
+. ./scripts/core/conflict_ui.sh
+. ./scripts/enroll_ui.sh
+. ./scripts/pal_ui_nextui.sh
+. ./scripts/menu_ui.sh
+
+conflict_n=$(ch_count_conflicts "$CONTINUITY_REPO_DIR" 2>/dev/null)
+case "$conflict_n" in ''|*[!0-9]*) conflict_n=0 ;; esac
+if [ "$conflict_n" -gt 0 ]; then
+    show_daemon_start "Continuity — $conflict_n conflict(s)"
+    mu_run "$CONTINUITY_REPO_DIR"
+    show_daemon_stop
+fi
+
 # ── OTA update check (X installs, B/timeout skips) ──────────────────
 # Card swaps are for binaries and emergencies only: every script fix
 # flows through here, over the same git+TLS stack enrollment proved.
@@ -250,9 +280,10 @@ show_simple "Scan: $scan_watched dirs, $scan_found saves (raw $scan_raw), $scan_
 
 if [ "$CONTINUITY_OTA" != "0" ]; then
     check_module "scripts/update.sh"
-    check_module "scripts/enroll_ui.sh"
     . ./scripts/update.sh
-    . ./scripts/enroll_ui.sh
+    # enroll_ui.sh (eui_prompt_button) is already sourced by the menu block
+    # above — re-sourcing would re-declare its readonly button constants and
+    # abort. The enrolled path always reaches that block before this one.
 
     show_daemon_start "Checking for updates (build $PAK_VERSION)..."
     ota_rc=0

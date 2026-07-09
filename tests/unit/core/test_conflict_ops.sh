@@ -150,9 +150,15 @@ create_test_conflict() {
     # Create .local file with "local" bytes
     printf 'local-save-bytes' > "$repo_dir/$repo_path.$local_device.local"
 
-    # Create .conflict JSON
-    printf '{\n  "_schema_version": "1.0",\n  "file": "%s",\n  "remote_device": "%s",\n  "remote_timestamp": "2026-03-12T13:00:00Z",\n  "local_device": "%s",\n  "local_timestamp": "2026-03-12T14:30:00Z",\n  "status": "unresolved"\n}\n' \
-        "$repo_path" "$remote_device" "$local_device" \
+    # Create .conflict JSON (schema v2)
+    local identity class
+    identity=$(printf '%s' "$repo_path" | sed 's/\.srm$//; s/\.sav$//; s/\.rtc$//')
+    case "$repo_path" in
+        *.rtc) class="rtc" ;;
+        *)     class="srm" ;;
+    esac
+    printf '{\n  "_schema_version": "2.0",\n  "file": "%s",\n  "identity": "%s",\n  "class": "%s",\n  "remote_device": "%s",\n  "remote_timestamp": "2026-03-12T13:00:00Z",\n  "local_device": "%s",\n  "local_timestamp": "2026-03-12T14:30:00Z",\n  "source": "pull",\n  "status": "unresolved"\n}\n' \
+        "$repo_path" "$identity" "$class" "$remote_device" "$local_device" \
         > "$repo_dir/$repo_path.conflict"
 
     # Create .continuity dir
@@ -179,12 +185,15 @@ create_test_conflict() {
 # ============================
 printf '\n=== ch_get_conflict_info tests ===\n' >&2
 
-# Test: parse valid .conflict file — all 10 fields present
+# Test: parse valid .conflict file — all 12 fields present (v2 adds
+# identity + class, read straight from the record)
 repo_dir=$(create_test_conflict "gci1" "snes/super_metroid.srm" "my-brick" "my-deck")
 output=$(ch_get_conflict_info "$repo_dir" "snes/super_metroid.srm" 2>/dev/null)
 rc=$?
 assert_rc "gci1: returns 0" 0 "$rc"
 assert_contains "gci1: file field" "$output" "file=snes/super_metroid.srm"
+assert_contains "gci1: identity field" "$output" "identity=snes/super_metroid"
+assert_contains "gci1: class field" "$output" "class=srm"
 assert_contains "gci1: system field" "$output" "system=snes"
 assert_contains "gci1: game field" "$output" "game=super_metroid"
 assert_contains "gci1: remote_device field" "$output" "remote_device=my-deck"
@@ -195,9 +204,9 @@ assert_contains "gci1: status field" "$output" "status=unresolved"
 assert_contains "gci1: active_version default remote" "$output" "active_version=remote"
 assert_contains "gci1: trying_modified default no" "$output" "trying_modified=no"
 
-# Verify 10 lines of output
+# Verify 12 lines of output
 line_count=$(printf '%s\n' "$output" | wc -l | tr -d ' ')
-assert_eq "gci1: 10 key-value lines" "10" "$line_count"
+assert_eq "gci1: 12 key-value lines" "12" "$line_count"
 
 # Test: system and game derivation for gb path
 repo_dir=$(create_test_conflict "gci2" "gb/pokemon_red.srm" "my-brick" "my-deck")

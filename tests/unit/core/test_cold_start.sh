@@ -357,7 +357,10 @@ assert_eq "cs_run conflict: .local has device version" "device_version" "$local_
 # .conflict metadata exists
 assert_file_exists "cs_run conflict: .conflict exists" "$R4_REPO/snes/super_metroid.srm.conflict"
 conflict_json=$(cat "$R4_REPO/snes/super_metroid.srm.conflict")
-assert_contains "cs_run conflict: .conflict has canonical" "$conflict_json" '"canonical": "snes/super_metroid.srm"'
+assert_contains "cs_run conflict: .conflict has _schema_version" "$conflict_json" '"_schema_version": "2.0"'
+assert_contains "cs_run conflict: .conflict has file" "$conflict_json" '"file": "snes/super_metroid.srm"'
+assert_contains "cs_run conflict: .conflict has identity" "$conflict_json" '"identity": "snes/super_metroid"'
+assert_contains "cs_run conflict: .conflict has class" "$conflict_json" '"class": "srm"'
 assert_contains "cs_run conflict: .conflict has device" "$conflict_json" '"local_device": "test-device"'
 assert_contains "cs_run conflict: .conflict has source" "$conflict_json" '"source": "cold_start"'
 

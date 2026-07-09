@@ -72,6 +72,8 @@ cp "$PROJECT_ROOT/src/platforms/nextui/enroll_sd_card.sh" "$PAK/scripts/"
 cp "$PROJECT_ROOT/src/platforms/nextui/enroll_ui.sh" "$PAK/scripts/"
 cp "$PROJECT_ROOT/src/platforms/nextui/preflight.sh" "$PAK/scripts/"
 cp "$PROJECT_ROOT/src/platforms/nextui/update.sh" "$PAK/scripts/"
+cp "$PROJECT_ROOT/src/platforms/nextui/pal_ui_nextui.sh" "$PAK/scripts/"
+cp "$PROJECT_ROOT/src/platforms/nextui/menu_ui.sh" "$PAK/scripts/"
 cp "$PROJECT_ROOT"/src/core/*.sh "$PAK/scripts/core/"
 mkdir -p "$PAK/config/platform_maps"
 cp "$PROJECT_ROOT/config/platform_maps/nextui.json" "$PAK/config/platform_maps/"
@@ -121,6 +123,7 @@ run_launch() {
     USERDATA_PATH="$USERDATA" PATH="$STUB_BIN:$PATH" \
     EUI_FIFO="$FIFO_CAP" EUI_JS_DEV="$TEST_TMPDIR/js0" \
     EUI_TICK="0.1" EUI_TIMEOUT_TICKS=100 \
+    PUI_TIMEOUT_TICKS=40 PUI_HANDOFF_TICKS=5 \
         busybox ash "$PAK/launch.sh"
 }
 : > "$TEST_TMPDIR/js0"
@@ -254,6 +257,29 @@ cp "$PROJECT_ROOT/src/platforms/nextui/update.sh" "$PAK/scripts/update.sh"
 cp "$PROJECT_ROOT/src/core/pal.sh" "$PAK/scripts/core/pal.sh"
 printf '0.1.0-test\n' > "$PAK/version.txt"
 chmod +x "$PAK/launch.sh"
+
+# --- Test 6c: enrolled + a conflict present — the menu opens and its
+#              "Conflicts (N)" row reflects the live count (primary entry) ---
+
+mkdir -p "$REPO_DIR/gb"
+printf 'remote' > "$REPO_DIR/gb/Zelda.sav"
+printf 'local'  > "$REPO_DIR/gb/Zelda.sav.test-brick.local"
+printf '{\n  "_schema_version": "2.0",\n  "file": "gb/Zelda.sav",\n  "identity": "gb/Zelda",\n  "class": "srm",\n  "remote_device": "deck",\n  "remote_timestamp": "2026-03-12T13:00:00Z",\n  "local_device": "test-brick",\n  "local_timestamp": "2026-03-12T14:00:00Z",\n  "source": "pull",\n  "status": "unresolved"\n}\n' \
+    > "$REPO_DIR/gb/Zelda.sav.conflict"
+
+printf '%s\n' "$$" > "$PID_FILE"      # daemon "alive"
+: > "$CHOME/continuity.log"
+: > "$TEST_TMPDIR/js0"
+printf "$(printf '\\%03o\\%03o\\%03o\\%03o\\%03o\\%03o\\%03o\\%03o' 0 0 0 0 1 0 1 0)" \
+    >> "$TEST_TMPDIR/js0"     # js_event: B press (number=0) → cancel the menu
+: > "$FIFO_CAP"
+rc=0; run_launch || rc=$?
+assert_eq "conflict-menu launch exits 0" "0" "$rc"
+assert_contains "menu opened with live conflict count" "$FIFO_CAP" "Conflicts (1)"
+
+# Remove the conflict so later tests see a clean, zero-conflict repo again.
+rm -f "$REPO_DIR/gb/Zelda.sav" "$REPO_DIR/gb/Zelda.sav.test-brick.local" \
+      "$REPO_DIR/gb/Zelda.sav.conflict"
 
 # --- Test 7: CRLF-corrupted module is named on screen, not a silent death ---
 

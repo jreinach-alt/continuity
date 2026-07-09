@@ -1,8 +1,9 @@
 # Sprint 3.1 — muOS Client on the Anbernic RG40XX V
 
-**Status:** DRAFT — Gate 0 RESOLVED (muOS, owner-confirmed 2026-07-09).
-Blocked on (a) the on-device recon report and (b) owner approval of this
-spec. Do not implement past the recon deliverable until both land.
+**Status:** DRAFT — Gate 0 RESOLVED (muOS, owner-confirmed 2026-07-09);
+**recon report received and analyzed 2026-07-09** (see Recon Findings).
+Blocked only on **owner approval of this spec**. Do not implement until
+it lands.
 
 **Kickoff brief:** `docs/sprints/sprint-3.1-anbernic-kickoff.md` (on
 `claude/parallel-kickoff` until it merges). The brief targeted "Onion OS
@@ -89,7 +90,88 @@ version.
 | boot/autostart | The boot-hook mechanism (the `auto.sh` equivalent) |
 | network/clock, input, misc | WiFi race analogue, TLS clock sanity, UI affordances |
 
-## Phase I — Implementation (BLOCKED until recon + approval)
+## Recon Findings (2026-07-09 — CONTINUITY_RECON.txt, RG40XX V)
+
+The owner ran the recon via Task Toolkit; the report resolves every
+Phase R blank except the boot hook. Facts (device-measured, not
+assumed):
+
+**Identity.** muOS **2502.0 PIXIE** per `/opt/muos/config/version.txt`
+(`/etc/os-release` says "2410 banana" — STALE; version detection must
+read version.txt, not os-release). Kernel 4.9.170 aarch64, Allwinner
+sun50iw9 (H700), 4× Cortex-A53, 1 GB RAM. Buildroot/glibc userland
+(`ld-linux-aarch64.so.1`), `/bin/sh` → busybox **1.36.1** (same version
+we vendor), 289 applets. Runs as root.
+
+**Toolchain gaps.** NO git, NO ssh/scp, NO inotifywait, NO `stat`
+applet (don't rely on stat). `wget`, `curl`, `timeout`, `find`, `cmp`,
+`sha256sum` present. → Bundled git required; polling daemon — the Brick
+shape exactly.
+
+**Storage & exec semantics (the Fable-core answers).**
+- SD1's user-visible partition (`/dev/mmcblk0p6`, exFAT via fuseblk) is
+  `/mnt/mmc` — mounted `rw,nosuid,nodev` and **NOT noexec**: the exec
+  probe's copied binary ran from the card (report shows busybox's
+  "applet not found" from the renamed copy — the exec itself succeeded;
+  recon-2 fixes the probe naming and the misleading heuristic line).
+  Bundled binaries can live on the card.
+- Symlinks NOT supported (as on the Brick) — ship real file copies.
+- `/proc/self/exe` resolves — the vendored-busybox applet self-exec
+  tier is viable. Kernel 4.9 ≥ every static-binary floor we use.
+- 78 GB free on the card; `/tmp` is tmpfs and writable; muOS rootfs is
+  ext4 on the same card (p5), invisible to Windows — all user file
+  drops (setup.json, payloads) go through `/mnt/mmc` (p6), which is
+  what a PC reader sees.
+
+**Saves (real files, byte-checked).**
+- RetroArch, `savefile_directory=/run/muos/storage/save/file` — a
+  stable indirection the PAL should use as `CONTINUITY_SAVES_ROOT`
+  (backed today by `/mnt/mmc/MUOS/save/file`).
+- Layout is **per-CORE**, not per-system (`sort_savefiles_enable=true`):
+  `save/file/<Core>/<rom_basename>.srm` — Gambatte, mGBA, Snes9x,
+  PCSX-ReARMed, Mupen64Plus-Next observed. `save_name_style` =
+  `retroarch` CONFIRMED against real files (`Chrono Trigger.srm`,
+  `Cruis'n USA (U) (V1.2) [!].srm` — spaces + apostrophes: the
+  porcelain `-z` rule applies everywhere).
+- `save_file_compression = "false"` and first-bytes of six real saves
+  are raw SRAM — **no RZIP quarantine needed** (risk retired; keep the
+  detector in the scanner anyway, the setting is user-flippable).
+- States at `save/state/<Core>/<rom>.state[N]` **plus `.png`
+  thumbnail siblings** — the state-archive filter must handle the
+  RetroArch shapes and decide on thumbnails (cheap; include).
+- `autosave_interval=0` → SRAM hits disk on exit/close-content, same
+  "sync when you take a break" story as the Brick.
+
+**The mapping design task (flagged for implementation).** muOS's
+per-core save dirs break the "system dir" assumption baked into
+`system_paths`: one core can serve two systems (Gambatte = GB+GBC) and
+one system can accumulate saves under multiple cores if the user
+switches. Plan: scanner watches `save/file/*/` generically; repo-path
+identity resolves via Sprint 2.0 ROM-anchoring against
+`CONTINUITY_ROMS_ROOT=/mnt/union/ROMS` (muOS's unionfs merge of SD1/SD2
+ROMS; folder names like `Nintendo - SNES`); device-bound
+materialization must place a save where the assigned core will look —
+likely readable from muOS's core assignments (`MUOS/info/core`),
+confirm during implementation. If this can't be expressed without
+touching `src/core/path_mapper.sh`, STOP and escalate per the file
+table rule (it is the likeliest escalation candidate in this sprint).
+
+**Network/clock/input.** WiFi up with working DNS; ping AND https to
+github.com succeed from the device; clock correct (TLS-safe). muOS
+ships syncthing support (its storage mount exists) — background network
+daemons are a normal pattern on this firmware. `/dev/input/js0`
+present (future UI).
+
+**Still open (the ONE remaining recon blank): the boot hook.** No
+user-level autostart mechanism surfaced at the SD level; muOS's own
+init is `/etc/init.d/S01muos`, task scripts live at `MUOS/task/` (SD)
+and `/opt/muos/share/task/` (internal). Official docs don't clearly
+bless a user boot hook. Implementation resolves this in its first
+validation round (preflight dumps `S01muos` + `/opt/muos/script/`), with
+a Task Toolkit "Start Continuity" entry as the guaranteed manual
+fallback from day one; enrollment does not depend on the answer.
+
+## Phase I — Implementation (BLOCKED on owner approval)
 
 Mirrors NextUI Phase 1 (Sprints 1.1–1.3 compressed, minus conflict UI):
 
@@ -158,9 +240,10 @@ Recon phase (now):
 - R1. Recon script runs under `busybox ash`, exits 0 with probes
   degraded gracefully, writes a single report, leaves no artifacts,
   never exposes secrets. (Unit-tested; hardware run pending.)
-- R2. Owner has run it on the RG40XX V via Task Toolkit and the report
-  resolves muOS version, arch/libc, exec semantics, save landscape,
-  boot hook.
+- R2. SATISFIED 2026-07-09: owner ran it via Task Toolkit; the report
+  resolves muOS version, arch/libc, exec semantics, and save landscape
+  (boot hook deferred to Phase I's first validation round — see Recon
+  Findings).
 
 Implementation phase (after approval):
 - I1. Bundled `git` + `busybox` validated per the field-notes protocol
@@ -213,17 +296,22 @@ Implementation phase (after approval):
 
 ## Risks
 
-1. **muOS release drift** — Task Toolkit location and boot hooks have
-   moved across muOS versions; recon pins the installed version before
-   anything ships.
-2. **SD mount noexec** — bundled binaries may need to live on a
-   different partition; exec probe answers this.
-3. **RetroArch save compression enabled** → `.srm` files are RZIP
-   containers → quarantine path until Phase 3 codec.
-4. **musl vs glibc / kernel drift** — static Brick binaries should not
+1. **Per-core save mapping** (see Recon Findings) — the likeliest
+   escalation candidate; resolve the design before writing the scanner,
+   and STOP if it needs core changes.
+2. **Boot hook unknown** — mitigated: Task Toolkit manual start works
+   from day one; hook resolved in the first validation round.
+3. **muOS release drift** — device runs 2502.0 PIXIE; version detection
+   must use `/opt/muos/config/version.txt` (`/etc/os-release` is stale
+   on this device). Task locations have moved across releases.
+4. ~~SD mount noexec~~ RETIRED: exec-from-SD proven on-device.
+5. ~~RetroArch RZIP saves~~ RETIRED for this device
+   (`save_file_compression=false`, real saves byte-checked raw) — keep
+   the scanner's detector, the setting is user-flippable.
+6. **Kernel 4.9 / glibc drift** — static Brick binaries should not
    care; the validation protocol proves it rather than assumes.
-5. **Clock/TLS** — same trap as the Brick; preflight carries the check
-   over.
+7. **Clock/TLS** — clock verified correct on-device; preflight keeps
+   the check anyway.
 
 ## Coordination (parallel sessions)
 

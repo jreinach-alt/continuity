@@ -60,19 +60,37 @@ script header and the spec. The kickoff brief's platform premise
 ("Onion OS on the RG40XX V") was corrected by Gate 0 — recorded in the
 spec rather than treated as a deviation.
 
+## Recon results (2026-07-09 — device report analyzed)
+
+Owner ran the recon via Task Toolkit on the first try. Full findings in
+the spec's "Recon Findings" section; headline: muOS **2502.0 PIXIE**
+(os-release stale — reads 2410 banana), aarch64/glibc/busybox 1.36.1,
+no git/ssh/inotifywait (bundled git + polling daemon, Brick shape),
+**exec-from-SD works** (mount is nosuid,nodev but not noexec), no
+symlinks, `/proc/self/exe` fine, saves per-CORE at
+`/run/muos/storage/save/file/<Core>/<rom>.srm` in confirmed retroarch
+name-style, compression off + real saves byte-checked raw (RZIP risk
+retired), WiFi/DNS/HTTPS/clock all good. Open blank: the user boot
+hook (Task Toolkit manual start is the day-one fallback). Main design
+flag: per-core save dirs vs `system_paths` — likeliest core-escalation
+candidate, analyzed in the spec.
+
+Recon probe defect found via the real report and fixed (recon-2): the
+exec probe's copied binary must be NAMED `busybox` — a multi-call
+binary dispatches on argv[0], so an arbitrary probe name returns
+"applet not found" (rc 127) and reads like a failed exec even though
+the exec succeeded. The heuristic line now distinguishes
+output-produced (exec worked) from silent rc 126/127 (exec failed).
+
 ## Open Items
 
-1. **Owner: run recon via Task Toolkit** — copy
-   `src/platforms/muos/recon_device.sh` to SD1 as
-   `MUOS/task/Continuity Recon.sh` (no editor re-save — CRLF trap),
-   boot, Applications → Task Toolkit → Continuity Recon, then send back
-   `CONTINUITY_RECON.txt` from the card root. If `MUOS/task/` doesn't
-   exist on the card, send a top-level card listing instead (Task
-   Toolkit moved across muOS releases).
-2. **Owner: approve the Sprint 3.1 spec** (or annotate).
-3. Implementation (Phase I of the spec) — blocked on 1–2.
-4. At implementation: add `src/platforms/muos/*.sh` to gate.sh's
-   full-tier shellcheck list (coordinated shared edit).
-5. Roadmap: future Onion sprint needs Onion-capable hardware (Miyoo
+1. **Owner: approve the Sprint 3.1 spec** (or annotate) — the only
+   remaining blocker.
+2. Implementation (Phase I of the spec) — blocked on 1.
+3. At implementation: add `src/platforms/muos/*.sh` to gate.sh's
+   full-tier shellcheck list (coordinated shared edit); resolve the
+   boot hook in the first validation round (preflight dumps S01muos +
+   /opt/muos/script/).
+4. Roadmap: future Onion sprint needs Onion-capable hardware (Miyoo
    Mini family, ARMv7 → new cross-compile target) — revisit when the
    fleet grows.

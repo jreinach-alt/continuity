@@ -35,7 +35,7 @@
 #   RC_FORCE_OD_B  force the octal od fallback (exercises minimal-od path)
 #   RC_NO_MAIN=1   source-only (unit tests call functions directly)
 
-readonly RC_VERSION="sprint3.1-recon-1"
+readonly RC_VERSION="sprint3.1-recon-2"
 
 RC_OUT="${RC_OUT:-}"
 RC_SD_ROOT="${RC_SD_ROOT:-}"
@@ -297,13 +297,21 @@ rc_sec_exec_semantics() {
     src=$(command -v busybox 2>/dev/null) || true
     [ -n "$src" ] || src=$(readlink -f /bin/sh 2>/dev/null) || true
     if [ -n "$src" ] && [ -r "$src" ]; then
-        copy="$probe/execprobe"
+        # Name the copy "busybox": a multi-call binary dispatches on
+        # argv[0], so an arbitrary probe name yields "applet not found"
+        # (rc 127) even though the exec SUCCEEDED — the first RG40XX V
+        # report tripped exactly that misread.
+        copy="$probe/busybox"
         if cp "$src" "$copy" 2>/dev/null && chmod +x "$copy" 2>/dev/null; then
             rc=0
             out=$("$copy" true </dev/null 2>&1) || rc=$?
             rc_emit "exec-from-SD ($src copied): rc=$rc ${out:+out=$(printf '%s' "$out" | head -c 120)}"
+            if [ -n "$out" ]; then
+                rc_emit "  ^ any output above proves the exec itself SUCCEEDED (loader ran the binary)"
+            fi
             case "$rc" in
-                126|127) rc_emit "  ^ rc $rc suggests noexec mount or wrong loader — CRITICAL for bundled binaries" ;;
+                126) rc_emit "  ^ rc 126 with no output suggests noexec mount or wrong loader — CRITICAL for bundled binaries" ;;
+                127) [ -z "$out" ] && rc_emit "  ^ rc 127 with no output suggests exec failure — CRITICAL for bundled binaries" ;;
             esac
         else
             rc_emit "exec-from-SD: could not copy probe binary"

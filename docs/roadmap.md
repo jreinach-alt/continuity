@@ -388,11 +388,19 @@ scanner-coverage + `.rtc` fixes are 2.0 prerequisites).
 
 ### Sprint 2.1 — RetroDeck PAL and Enrollment
 
+**Status:** Implemented on `claude/sprint-2.1-retrodeck-9a0mqd` (spec
+approved 2026-07-09) — pending the on-device recon confirmation (spec
+§Recon gate, R1–R5) and owner merge. Spec:
+`docs/sprints/sprint-2.1-spec.md`; summary:
+`docs/sprints/sprint-2.1-summary.md`.
+
 **Scope:**
 - Implement RetroDeck PAL (`src/platforms/retrodeck/pal_retrodeck.sh`)
 - CLI enrollment script (detect save paths, clone repo, register device)
 - systemd user service definition for daemon
 - Verify all core sync phases work with RetroDeck PAL (no core code changes expected)
+
+**Reference Specs:** `docs/sprints/sprint-2.1-spec.md`
 
 ---
 

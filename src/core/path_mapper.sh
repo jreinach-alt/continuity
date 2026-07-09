@@ -9,6 +9,8 @@
 _pm_forward_map=""   # local_dir=canonical (one per line)
 _pm_reverse_map=""   # canonical=local_dir (one per line)
 _pm_loaded=""        # non-empty if map is loaded
+_pm_name_style=""    # save_name_style: minui | retroarch | generic (v2 maps)
+_pm_container=""     # save_container: raw | rzip (v2 maps)
 
 # pm_load_platform_map — parse the platform map JSON at the given path
 # Sets module-internal lookup structures for system path translation.
@@ -26,6 +28,8 @@ pm_load_platform_map() {
 
     _pm_forward_map=""
     _pm_reverse_map=""
+    _pm_name_style=""
+    _pm_container=""
 
     # Extract system_paths block and parse key=value pairs
     local in_block
@@ -70,6 +74,11 @@ $canonical=$local_dir"
         pal_log "error" "No system_paths found in platform map: $map_file"
         return 1
     fi
+
+    # v2 canonicalization keys (optional — absent on schema 1.0 maps, which
+    # keep the legacy passthrough behavior). Simple top-level string values.
+    _pm_name_style=$(sed -n 's/.*"save_name_style" *: *"\([^"]*\)".*/\1/p' "$map_file" | head -1)
+    _pm_container=$(sed -n 's/.*"save_container" *: *"\([^"]*\)".*/\1/p' "$map_file" | head -1)
 
     _pm_loaded="1"
     return 0
@@ -180,4 +189,241 @@ pm_state_to_repo() {
         return 1
     fi
     printf 'states/%s\n' "$rel_path"
+}
+
+# ── Shared save/state pattern definitions (single source of truth) ────
+# Every scanner, filter, and pathspec that enumerates save/state files
+# derives its patterns from here so the set can never drift across the
+# codebase again (matrix §6: "every list that enumerates save extensions
+# must be updated together"). .rtc is a save-class sibling — it carries a
+# game's clock state and must travel WITH that game's SRAM identity. The
+# state set covers all five NextUI state name-shapes (matrix §4) plus the
+# RA/-ish auto slot. The tools/saves-repo/ digest classifier mirrors these
+# by hand (it deploys into the user's repo and cannot source core).
+
+# pm_save_grep_re — BRE matching a save-class path suffix (.srm/.sav/.rtc)
+pm_save_grep_re() { printf '%s' '\.\(srm\|sav\|rtc\)$'; }
+
+# pm_state_grep_re — BRE matching any state name-shape path suffix
+pm_state_grep_re() { printf '%s' '\.\(st[0-9]\|state\|state[0-9]\|state\.[0-9]\|state\.auto\)$'; }
+
+# pm_save_or_state_grep_re — union of the two (working-tree change filter)
+pm_save_or_state_grep_re() {
+    printf '%s' '\.\(srm\|sav\|rtc\|st[0-9]\|state\|state[0-9]\|state\.[0-9]\|state\.auto\)$'
+}
+
+# pm_find_saves <dir> [extra find predicates...] — save-class files under dir
+pm_find_saves() {
+    local dir
+    dir="$1"
+    shift
+    find "$dir" \( -name '*.srm' -o -name '*.sav' -o -name '*.rtc' \) "$@" 2>/dev/null
+}
+
+# pm_find_states <dir> [extra find predicates...] — every state shape under dir
+pm_find_states() {
+    local dir
+    dir="$1"
+    shift
+    find "$dir" \
+        \( -name '*.st[0-9]' -o -name '*.state' -o -name '*.state[0-9]' \
+           -o -name '*.state.[0-9]' -o -name '*.state.auto' \) "$@" 2>/dev/null
+}
+
+# ── Canonical save-format mapping (Sprint 2.0) ────────────────────────
+# ONE canonical repo representation per save + per-device materialization.
+# Canonicalization engages ONLY when the loaded map declares
+# save_name_style AND the PAL exposes an existing CONTINUITY_ROMS_ROOT.
+# Absent either signal, pm_device_to_canonical/pm_canonical_to_device
+# delegate to the legacy directory primitives (byte-for-byte passthrough),
+# so maps/tests without the v2 signals behave exactly as before.
+
+# pm_canon_enabled — is name-style canonicalization active?
+pm_canon_enabled() {
+    [ -n "$_pm_name_style" ] && \
+    [ -n "$CONTINUITY_ROMS_ROOT" ] && \
+    [ -d "$CONTINUITY_ROMS_ROOT" ]
+}
+
+# pm_rom_ext_strip — remove a trailing 2–4 char ROM extension (matrix §2).
+# The repo-side fallback when no ROM list resolves identity. Names with no
+# such extension (spaced/parenthesized titles) pass through unchanged.
+pm_rom_ext_strip() {
+    printf '%s' "$1" | sed 's/\.[A-Za-z0-9]\{2,4\}$//'
+}
+
+# pm_container_class <file> — sniff the 8-byte container magic.
+# Prints "rzip" for RetroArch's RZIP container (#RZIPv\x01#), else "raw".
+# Nonexistent/short files and the snes9x #!s9xsnp state magic all read raw.
+pm_container_class() {
+    local f magic
+    f="$1"
+    if [ ! -f "$f" ]; then
+        printf 'raw\n'
+        return 0
+    fi
+    magic=$(dd if="$f" bs=1 count=8 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')
+    if [ "$magic" = "23525a4950760123" ]; then
+        printf 'rzip\n'
+    else
+        printf 'raw\n'
+    fi
+    return 0
+}
+
+# pm_rom_dir <canonical_system> — absolute ROM directory for a system.
+# Tries CONTINUITY_ROMS_ROOT/<local_dir> then the NextUI long-folder form
+# CONTINUITY_ROMS_ROOT/*(<local_dir>). Returns 1 if none exists.
+pm_rom_dir() {
+    local canonical local_dir cand
+    canonical="$1"
+    [ -n "$CONTINUITY_ROMS_ROOT" ] || return 1
+    local_dir=$(printf '%s\n' "$_pm_reverse_map" | grep "^${canonical}=" | sed 's/^[^=]*=//')
+    [ -n "$local_dir" ] || return 1
+    if [ -d "$CONTINUITY_ROMS_ROOT/$local_dir" ]; then
+        printf '%s\n' "$CONTINUITY_ROMS_ROOT/$local_dir"
+        return 0
+    fi
+    cand=$(find "$CONTINUITY_ROMS_ROOT" -maxdepth 1 -type d -name "*($local_dir)" 2>/dev/null | head -1)
+    if [ -n "$cand" ]; then
+        printf '%s\n' "$cand"
+        return 0
+    fi
+    return 1
+}
+
+# pm_rom_match_basename <canonical_system> <stem> — ROM-anchored identity.
+# A save stem (filename minus its save extension) matches a ROM either by
+# full filename (MinUI style: stem == "Game.gba") or by ext-stripped name
+# (RA/Generic: stem == "Game"). Prints the canonical basename (the ROM's
+# ext-stripped name) on a match; empty when no ROM matches.
+pm_rom_match_basename() {
+    local canonical stem rom_dir
+    canonical="$1"
+    stem="$2"
+    rom_dir=$(pm_rom_dir "$canonical") || return 0
+    find "$rom_dir" -maxdepth 1 -type f 2>/dev/null | while IFS= read -r romfile; do
+        local rname rstrip
+        rname=$(basename "$romfile")
+        rstrip=$(pm_rom_ext_strip "$rname")
+        if [ "$rname" = "$stem" ] || [ "$rstrip" = "$stem" ]; then
+            printf '%s\n' "$rstrip"
+            break
+        fi
+    done
+}
+
+# pm_rom_fullname <canonical_system> <basename> — reverse ROM lookup.
+# Prints the ROM's full on-disk filename whose ext-stripped name equals
+# <basename> (so MinUI materialization can re-embed the ROM extension).
+# Empty when no ROM matches — the caller then skips materialization.
+pm_rom_fullname() {
+    local canonical base rom_dir
+    canonical="$1"
+    base="$2"
+    rom_dir=$(pm_rom_dir "$canonical") || return 0
+    find "$rom_dir" -maxdepth 1 -type f 2>/dev/null | while IFS= read -r romfile; do
+        local rname rstrip
+        rname=$(basename "$romfile")
+        rstrip=$(pm_rom_ext_strip "$rname")
+        if [ "$rstrip" = "$base" ] || [ "$rname" = "$base" ]; then
+            printf '%s\n' "$rname"
+            break
+        fi
+    done
+}
+
+# pm_device_to_canonical <device_path> — device save path -> canonical repo
+# path (<system>/<basename>.srm, raw). Sniffs the container first: real
+# RZIP magic quarantines (rc 3, nothing stored). Legacy passthrough when
+# canonicalization is disabled.
+#   0 -> prints canonical repo path
+#   1 -> unknown system directory
+#   3 -> compressed save quarantined (prints nothing)
+pm_device_to_canonical() {
+    local device_path repo_dirpath system filename stem canon_ext base
+    device_path="$1"
+
+    repo_dirpath=$(pm_local_to_repo "$device_path") || return 1
+    system=$(printf '%s' "$repo_dirpath" | sed 's|/.*||')
+    filename=$(printf '%s' "$repo_dirpath" | sed 's|[^/]*/||')
+
+    # Container sniff — only real RZIP bytes trigger it, in any mode.
+    if [ "$(pm_container_class "$device_path")" = "rzip" ]; then
+        pal_log "warn" "Compressed save skipped — set save format to uncompressed: $repo_dirpath"
+        return 3
+    fi
+
+    if ! pm_canon_enabled; then
+        printf '%s\n' "$repo_dirpath"
+        return 0
+    fi
+
+    case "$filename" in
+        *.rtc) stem=${filename%.rtc}; canon_ext=".rtc" ;;
+        *.srm) stem=${filename%.srm}; canon_ext=".srm" ;;
+        *.sav) stem=${filename%.sav}; canon_ext=".srm" ;;
+        *)     printf '%s\n' "$repo_dirpath"; return 0 ;;
+    esac
+
+    base=$(pm_rom_match_basename "$system" "$stem")
+    [ -n "$base" ] || base=$(pm_rom_ext_strip "$stem")
+
+    printf '%s/%s%s\n' "$system" "$base" "$canon_ext"
+    return 0
+}
+
+# pm_canonical_to_device <canonical_repo_path> — canonical repo path ->
+# device path with the platform's native filename, ROM-gated. Legacy
+# passthrough when canonicalization is disabled.
+#   0 -> prints device path
+#   1 -> unknown canonical system
+#   2 -> no matching ROM on this device (sparse skip; prints nothing)
+pm_canonical_to_device() {
+    local repo_path device_legacy system filename base canon_ext rom_full local_dir dev_name
+    repo_path="$1"
+
+    device_legacy=$(pm_repo_to_local "$repo_path") || return 1
+
+    if ! pm_canon_enabled; then
+        printf '%s\n' "$device_legacy"
+        return 0
+    fi
+
+    system=$(printf '%s' "$repo_path" | sed 's|/.*||')
+    filename=$(printf '%s' "$repo_path" | sed 's|[^/]*/||')
+    case "$filename" in
+        *.rtc) base=${filename%.rtc}; canon_ext=".rtc" ;;
+        *.srm) base=${filename%.srm}; canon_ext=".srm" ;;
+        *.sav) base=${filename%.sav}; canon_ext=".srm" ;;
+        *)     printf '%s\n' "$device_legacy"; return 0 ;;
+    esac
+
+    rom_full=$(pm_rom_fullname "$system" "$base")
+    [ -n "$rom_full" ] || return 2
+
+    local_dir=$(printf '%s\n' "$_pm_reverse_map" | grep "^${system}=" | sed 's/^[^=]*=//')
+
+    case "$_pm_name_style" in
+        minui)
+            if [ "$canon_ext" = ".rtc" ]; then
+                dev_name="$rom_full.rtc"
+            else
+                dev_name="$rom_full.sav"
+            fi
+            ;;
+        generic)
+            if [ "$canon_ext" = ".rtc" ]; then
+                dev_name="$base.rtc"
+            else
+                dev_name="$base.sav"
+            fi
+            ;;
+        *)  # retroarch (and any unrecognized style): keep the canonical name
+            dev_name="$base$canon_ext"
+            ;;
+    esac
+
+    printf '%s/%s/%s\n' "$CONTINUITY_SAVES_ROOT" "$local_dir" "$dev_name"
+    return 0
 }

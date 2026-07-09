@@ -1,5 +1,5 @@
 {
-  "_schema_version": "1.0",
+  "_schema_version": "2.0",
   "_description": "Path mapping for TrimUI Brick running NextUI. Maps canonical system names to local save directories.",
   "platform": "nextui",
   "device_family": "trimui_brick",
@@ -20,5 +20,9 @@
     "psp": "PSP",
     "arcade": "ARCADE"
   },
-  "save_extension": ".srm"
+  "save_extension": ".srm",
+  "save_name_style": "minui",
+  "save_container": "raw",
+  "rom_roots": ["Roms"],
+  "_rom_roots_note": "Informational. Runtime ROM-anchoring reads $CONTINUITY_ROMS_ROOT from the PAL (Roms/), not this field. On-device ROM folder names (Roms/<TAG> vs Roms/<Display (TAG)>) must be confirmed on hardware before migrate_repo.sh is run against the live saves repo — see sprint-2.0 out-of-scope. pm_rom_dir handles both forms."
 }

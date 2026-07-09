@@ -89,3 +89,8 @@ pal_get_platform_map() {
 
 # Save states root (opaque one-way backup; empty disables)
 CONTINUITY_STATES_ROOT="${CONTINUITY_STATES_ROOT:-/mnt/SDCARD/.userdata/shared}"
+
+# ROM root (Sprint 2.0 canonicalization). ROM-anchored identity and
+# per-device sparse materialization key off the games actually present
+# here; empty or absent disables canonicalization (legacy passthrough).
+CONTINUITY_ROMS_ROOT="${CONTINUITY_ROMS_ROOT:-/mnt/SDCARD/Roms}"

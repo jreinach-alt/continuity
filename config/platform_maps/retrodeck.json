@@ -21,5 +21,10 @@
     "psp": "psp",
     "arcade": "fbneo"
   },
-  "save_extension": ".srm"
+  "save_extension": ".srm",
+  "save_name_style": "retroarch",
+  "save_container": "raw",
+  "rom_roots": ["roms"],
+  "_container_note": "RetroDeck runs RetroArch; Phase 2 targets the uncompressed .srm setting (save_file_compression off). Compressed (rzip) saves are quarantined until the Phase 3 codec integration.",
+  "_rom_roots_note": "Informational. Runtime ROM-anchoring reads $CONTINUITY_ROMS_ROOT from the PAL (data/roms/<system>), not this field."
 }

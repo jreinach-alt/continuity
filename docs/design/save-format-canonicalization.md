@@ -1,8 +1,10 @@
 # Save-Format Canonicalization — Phase 2 Design Spec
 
-**Status:** Draft for approval — implementation belongs to Phase 2
-(second platform). Written 2026-07-07 while the facts were fresh from
-the NextUI bring-up; every upstream claim below is cited to source.
+**Status:** Approved 2026-07-09 for Sprint 2.0 (owner green-light;
+Decisions 1A quarantine + 2A state-coverage-only). Implementation spec:
+`docs/sprints/sprint-2.0-spec.md`. Written 2026-07-07 while the facts were
+fresh from the NextUI bring-up; every upstream claim below is cited to
+source.
 **Owner intent:** "the OS claims the saves are 'MinUI' format, so maybe
 there is a standard we can use."
 

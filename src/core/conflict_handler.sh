@@ -90,14 +90,15 @@ ch_handle_pull_conflict() {
         return 1
     fi
 
-    # Step 2: Identify diverged save files — BOTH formats the scanners
-    # sync (.srm and .sav; the Brick's compiled default is .sav), and
+    # Step 2: Identify diverged save files — every save-class extension the
+    # scanners sync (.srm/.sav; the Brick's compiled default is .sav; plus
+    # .rtc, which carries clock state and conflicts like any save), and
     # NUL-delimited (-z) because diff --name-only C-quotes spaced and
     # non-ASCII paths exactly like status --porcelain does (see the
     # porcelain-quoting field note).
     local diverged
     diverged=$("$CONTINUITY_GIT_BIN" -C "$repo_dir" \
-        diff --name-only -z HEAD origin/main -- '*.srm' '*.sav' 2>/dev/null | \
+        diff --name-only -z HEAD origin/main -- '*.srm' '*.sav' '*.rtc' 2>/dev/null | \
         tr '\0' '\n') || true
 
     # Classify: a CONFLICT is a save that exists on BOTH sides with
@@ -341,7 +342,7 @@ ch_resolve() {
 
     # Post-resolution: update device save (best-effort)
     local device_path_res
-    device_path_res=$(pm_repo_to_local "$repo_path" 2>/dev/null) || true
+    device_path_res=$(pm_canonical_to_device "$repo_path" 2>/dev/null) || true
     if [ -n "$device_path_res" ] && [ -d "$(dirname "$device_path_res")" ]; then
         cp "$repo_dir/$repo_path" "$device_path_res" 2>/dev/null || true
     fi
@@ -484,7 +485,7 @@ ch_get_conflict_info() {
     # Derive system and game from path
     local system game
     system=$(printf '%s' "$repo_path" | sed 's|/.*||')
-    game=$(printf '%s' "$repo_path" | sed 's|.*/||; s|\.srm$||; s|\.sav$||')
+    game=$(printf '%s' "$repo_path" | sed 's|.*/||; s|\.srm$||; s|\.sav$||; s|\.rtc$||')
 
     # Determine active_version and trying_modified
     local active_version trying_modified
@@ -587,10 +588,10 @@ ch_try_version() {
             ;;
     esac
 
-    # Get device save path
+    # Get device save path (ROM-anchored native name in canonical mode)
     local device_path
-    device_path=$(pm_repo_to_local "$repo_path" 2>/dev/null) || {
-        pal_log "error" "ch_try_version: pm_repo_to_local failed for $repo_path"
+    device_path=$(pm_canonical_to_device "$repo_path" 2>/dev/null) || {
+        pal_log "error" "ch_try_version: pm_canonical_to_device failed for $repo_path"
         return 1
     }
 

@@ -22,41 +22,44 @@ cd_detect_changes() {
     "$CONTINUITY_GIT_BIN" -C "$repo_dir" status --porcelain -z -uall 2>/dev/null | \
         tr '\0' '\n' | \
         sed 's/^...//' | \
-        grep '\.\(srm\|sav\|st[0-9]\)$' || true
+        grep "$(pm_save_or_state_grep_re)" || true
     return 0
 }
 
-# cd_list_repo_saves — list all .srm files in the repo working tree
+# cd_list_repo_saves — list all save-class files in the repo working tree
 # Usage: cd_list_repo_saves <repo_dir>
 # Prints repo-relative paths, one per line. Excludes .git/ and .continuity/.
-# Returns 0 always (empty output means no .srm files).
+# Save class = .srm/.sav/.rtc (pm_find_saves). Returns 0 always.
 cd_list_repo_saves() {
     local repo_dir
     repo_dir="$1"
 
-    find "$repo_dir" \( -name "*.srm" -o -name "*.sav" \) \
+    pm_find_saves "$repo_dir" \
         ! -path "*/.git/*" \
-        ! -path "*/.continuity/*" 2>/dev/null | \
+        ! -path "*/.continuity/*" | \
     while IFS= read -r abs_path; do
         printf '%s\n' "$abs_path" | sed "s|^$repo_dir/||"
     done
     return 0
 }
 
-# cd_list_device_saves — list all .srm files on the device
+# cd_list_device_saves — list all save-class files on the device
 # Usage: cd_list_device_saves
 # Prints absolute paths, one per line. Silently skips nonexistent dirs.
-# Returns 0 always (empty output means no .srm files).
+# Save class = .srm/.sav/.rtc (pm_find_saves). Returns 0 always.
 cd_list_device_saves() {
     pm_list_watched_dirs | while IFS= read -r dir; do
         [ -z "$dir" ] && continue
         [ -d "$dir" ] || continue
-        find "$dir" \( -name "*.srm" -o -name "*.sav" \) 2>/dev/null
+        pm_find_saves "$dir"
     done
     return 0
 }
 
-# cd_list_device_states — list savestate files (.st0-.st9) on the device.
+# cd_list_device_states — list savestate files on the device across ALL
+# five NextUI state name-shapes (matrix §4): .st[0-9], .state, .state[0-9],
+# .state.[0-9], .state.auto (pm_find_states). Four of the five were never
+# backed up before Sprint 2.0.
 # Prints absolute paths, one per line. Empty when CONTINUITY_STATES_ROOT
 # is unset (platform without state backup) or the dir is absent.
 # Oversized states (>CONTINUITY_STATE_MAX_KB, default 8192) are skipped
@@ -77,7 +80,7 @@ cd_state_size_ok() {
 cd_list_device_states() {
     [ -n "$CONTINUITY_STATES_ROOT" ] || return 0
     [ -d "$CONTINUITY_STATES_ROOT" ] || return 0
-    find "$CONTINUITY_STATES_ROOT" -name "*.st[0-9]" 2>/dev/null | \
+    pm_find_states "$CONTINUITY_STATES_ROOT" | \
     while IFS= read -r f; do
         cd_state_size_ok "$f" || continue
         printf '%s\n' "$f"

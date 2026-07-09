@@ -161,6 +161,40 @@ rc=$?
 assert_rc "cd_detect_changes no changes returns 0" 0 "$rc"
 assert_eq "cd_detect_changes no changes empty output" "" "$output"
 
+# --- Sprint 2.0: .rtc save-class sibling + full state-shape coverage ---
+
+# .rtc is enumerated as a save (device + repo scanners)
+printf 'clock' > "$CONTINUITY_SAVES_ROOT/SFC/pokemon.gbc.rtc"
+output=$(cd_list_device_saves)
+assert_contains "cd_list_device_saves finds .rtc" "$output" "$CONTINUITY_SAVES_ROOT/SFC/pokemon.gbc.rtc"
+mkdir -p "$REPO/gb"
+printf 'clock' > "$REPO/gb/pokemon.rtc"
+output=$(cd_list_repo_saves "$REPO")
+assert_contains "cd_list_repo_saves finds .rtc" "$output" "gb/pokemon.rtc"
+
+# cd_detect_changes matches .rtc and every new state shape in a git tree
+mkdir -p "$GIT_REPO/gb" "$GIT_REPO/states/GBC-gambatte"
+printf 'clock' > "$GIT_REPO/gb/pokemon.rtc"
+for st in "S.st0" "S.state" "S.state1" "S.state.0" "S.state.auto"; do
+    printf 'st' > "$GIT_REPO/states/GBC-gambatte/$st"
+done
+output=$(cd_detect_changes "$GIT_REPO")
+assert_contains "cd_detect_changes finds .rtc" "$output" "gb/pokemon.rtc"
+for st in "st0" "state" "state1" "state.0" "state.auto"; do
+    assert_contains "cd_detect_changes finds state .$st" "$output" "GBC-gambatte/S.$st"
+done
+
+# cd_list_device_states finds all FIVE state name-shapes (4 of 5 were
+# silently never backed up before Sprint 2.0 — matrix §6)
+STATES="$CONTINUITY_STATES_ROOT"
+mkdir -p "$STATES/SFC-snes9x"
+for st in "Game.st0" "Game.state" "Game.state2" "Game.state.0" "Game.state.auto"; do
+    printf 'state-bytes' > "$STATES/SFC-snes9x/$st"
+done
+output=$(cd_list_device_states)
+state_count=$(printf '%s\n' "$output" | grep -c '.')
+assert_eq "cd_list_device_states finds all 5 shapes" "5" "$state_count"
+
 # --- Summary ---
 printf '\ntest_change_detector: %s passed, %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ] || exit 1

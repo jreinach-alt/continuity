@@ -17,7 +17,7 @@
 
 # bp_get_remote_changes — list save files changed between old_commit and HEAD
 # Usage: bp_get_remote_changes <repo_dir> <old_commit>
-# Prints repo-relative save paths (.srm and .sav), one per line.
+# Prints repo-relative save-class paths (.srm/.sav/.rtc), one per line.
 # Returns: 0 on success, 1 if git diff fails.
 bp_get_remote_changes() {
     local repo_dir old_commit _bp_tmp rc_diff
@@ -36,7 +36,9 @@ bp_get_remote_changes() {
         return 1
     fi
 
-    tr '\0' '\n' < "$_bp_tmp" | grep '\.\(srm\|sav\)$' || true
+    # Save class only (.srm/.sav/.rtc) — states are one-way device -> repo
+    # and are never applied back to a device on boot pull.
+    tr '\0' '\n' < "$_bp_tmp" | grep "$(pm_save_grep_re)" || true
     rm -f "$_bp_tmp"
     return 0
 }
@@ -71,7 +73,12 @@ bp_apply_remote_saves() {
 
         local local_path rc_map
         rc_map=0
-        local_path=$(pm_repo_to_local "$repo_path" 2>/dev/null) || rc_map=$?
+        local_path=$(pm_canonical_to_device "$repo_path" 2>/dev/null) || rc_map=$?
+        if [ "$rc_map" -eq 2 ]; then
+            # No matching ROM on this device — sparse sync, NOT a failure.
+            pal_log "info" "Boot pull: no ROM for $repo_path — not materialized"
+            continue
+        fi
         if [ "$rc_map" -ne 0 ] || [ -z "$local_path" ]; then
             pal_log "warn" "Boot pull: unrecognized system in $repo_path, skipping"
             printf 'map_fail\n' >> "$failure_file"

@@ -1,9 +1,8 @@
 # Sprint 1.5 — NextUI Tool PAK: Conflict-Resolution UI
 
-**Status:** DRAFT — awaiting owner approval (spec-gated per CLAUDE.md; no
-code before approval). The Brick reference implementation of the approved
-`docs/design/conflict-resolution-experience.md`, nested under the approved
-`docs/design/ui-design-system.md`.
+**Status:** Approved 2026-07-09 (owner). The Brick reference implementation
+of the approved `docs/design/conflict-resolution-experience.md`, nested
+under the approved `docs/design/ui-design-system.md`.
 
 **Branch:** `claude/sprint-1.5-conflict-ui-wkcvxj` → PR to `main` (owner
 merges). No remote CI — `scripts/gate.sh full` green IS the verification.

@@ -1,0 +1,23 @@
+# Continuity save sync daemon — RetroDeck (Steam Deck), systemd --user unit.
+# Installed to ~/.config/systemd/user/continuity.service by
+# enroll_retrodeck.sh, which substitutes @APP_DIR@ with the checkout root.
+# Enable/disable:  systemctl --user {enable --now|disable --now} continuity
+# Logs:            journalctl --user -u continuity
+
+[Unit]
+Description=Continuity save sync daemon (RetroDeck)
+# Best-effort ordering only — the daemon tolerates a late network
+# (deferred cold start, queued pushes), so no hard requirement.
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@APP_DIR@/src/platforms/retrodeck/continuity_daemon.sh
+Restart=on-failure
+RestartSec=30
+# 78 = EX_CONFIG (not enrolled / RetroDeck config missing) — restarting
+# cannot fix it; don't thrash.
+RestartPreventExitStatus=78
+
+[Install]
+WantedBy=default.target

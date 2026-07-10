@@ -22,7 +22,8 @@ owner's **Ayn Thor**) reaching **sync parity with RetroDeck 2.1**:
 enrollment + device registration, all sync phases (cold start, boot pull,
 runtime detection, stale recovery), conflict PRESERVATION (v2 `.conflict`
 + `.local`), canonicalization (retroarch name style, ROM-anchoring,
-container sniff + RZIP quarantine), and save-state one-way archive — with
+container sniff + inbound RZIP transcode — quarantine demoted to the
+corrupt-file failure path), and save-state one-way archive — with
 **byte-identical on-repo artifacts**, proven by a mandatory cross-language
 conformance suite and a headless cross-device interop test. Git via JGit;
 PAT in Android Keystore. NOT this sprint: the conflict UI (3.2b) and
@@ -41,9 +42,9 @@ RetroArch keeps saves at its app-private default
 them** — the user must point RetroArch's `savefile_directory` (and
 states/ROM dirs) at shared storage once (e.g.
 `/storage/emulated/0/RetroArch/saves`). This follows the established
-instruct-don't-reconfigure pattern (like the RZIP "set save format to
-uncompressed" line): enrollment preflight detects it and names the fix
-on-screen; we never rewrite RetroArch's config ourselves. The recon
+instruct-don't-reconfigure pattern (the shell platforms' RZIP "set save
+format to uncompressed" precedent): enrollment preflight detects it and
+names the fix on-screen; we never rewrite RetroArch's config ourselves. The recon
 (R2) determines whether the owner's Thor already has reachable paths.
 All Files Access spans **every shared-storage volume, including
 removable SD cards** (`/storage/<VOLUME-ID>/…`) — only
@@ -125,12 +126,36 @@ to the shell reference, these are the exact bytes `core` must produce:
 1. **Canonical save paths** — `<canonical_system>/<basename>.srm` (and
    `.rtc` sibling), per `src/core/path_mapper.sh`:
    `pm_device_to_canonical` (container sniff first: 8-byte magic
-   `23525a4950760123` → quarantine, rc-3 semantics, named log line
-   "compressed save skipped — set save format to uncompressed"),
-   ROM-anchored identity (`pm_rom_match_basename`: save stem == ROM full
-   filename OR ROM ext-stripped name), heuristic fallback = strip one
-   trailing 2–4 char alphanumeric extension (`pm_rom_ext_strip`, matrix
-   §2), `.sav`→`.srm` class mapping, `.rtc` kept.
+   `23525a4950760123`), ROM-anchored identity
+   (`pm_rom_match_basename`: save stem == ROM full filename OR ROM
+   ext-stripped name), heuristic fallback = strip one trailing 2–4 char
+   alphanumeric extension (`pm_rom_ext_strip`, matrix §2),
+   `.sav`→`.srm` class mapping, `.rtc` kept.
+   **Container handling — DECLARED deviation from the shell platforms
+   (owner-directed 2026-07-10):** a healthy RZIP device file
+   **transcodes inbound** — decoded to raw payload by a Kotlin RZIP
+   decoder (`java.util.zip.Inflater`; validated byte-exact against the
+   vendored libretro reference oracle `tools/rzip/reference/` and its
+   reference-encoder-generated fixtures) — instead of quarantining.
+   This is the canonicalization doc's Decision-4 Phase-3 inbound lift,
+   executed Kotlin-first (target Android users may have
+   `save_file_compression` on, and "re-save every game" is not an
+   acceptable onboarding step); it supersedes the architecture doc's
+   §2 "RZIP quarantine" wording for Android, approved via this spec.
+   Consequences, all pinned: EVERY repo-side byte (canonical file,
+   `.local` preservation) is raw payload; ALL device-vs-repo byte
+   comparisons (cold-start dedupe/conflict check, poll confirm, stale
+   catch-up) compare decompressed PAYLOADS, so RetroArch recompressing
+   an identical payload never registers as a change; materialization
+   ALWAYS writes raw — safe on any setting because `rzipstream` sniffs
+   and reads both containers (canonicalization doc, pinned to upstream
+   source), and the device rewrites its preferred container on next
+   flush. Quarantine semantics survive ONLY as the failure path: a
+   corrupt/truncated RZIP, or one whose header claims an absurd
+   decompressed size (bomb guard, hard cap ~64 MB), is skipped with a
+   named log line and never stored — the never-store-garbage guarantee
+   is unchanged. States are untouched by all of this (opaque archive,
+   compressed bytes verbatim, format-matrix §7).
    `pm_canonical_to_device` for retroarch style = `<basename>.srm`
    under the mapped system dir, ROM-gated (no ROM → sparse skip, rc-2
    semantics). The Kotlin mapper implements all three styles
@@ -211,6 +236,16 @@ The drift-killer. One corpus, two executors, committed expected bytes:
   bytes → raw), `.conflict` JSON (both sources, quote-in-name escaping
   case, unknown-remote fallback), `.local` naming, device JSON,
   `.gitignore` seed bytes, commit messages (all four shapes).
+- **Container-transcode rows (second oracle):** RZIP decode cases
+  (single-chunk, multichunk, truncated → named skip, oversized-header →
+  named skip) assert the Kotlin decoder's output byte-exact. The shell
+  reference cannot generate these expected bytes (shell platforms
+  quarantine — a declared behavior difference, see byte-inventory 1);
+  their oracle is the vendored libretro reference at
+  `tools/rzip/reference/` — the committed fixtures are already
+  reference-encoder-generated, and `scripts/build_rzip.sh`'s host
+  binary regenerates/extends them. Everything else keeps the shell
+  reference as its oracle.
 - **Determinism:** the generator runs the REAL shell writers in a
   sandbox with `date` shadowed by a shell function (functions shadow
   binaries in command substitution) and `GIT_COMMITTER_DATE` pinned, so
@@ -318,9 +353,13 @@ Items the report must confirm:
   map's `system_paths` values (validated against the REAL directory
   names, replacing the current v1 guesses) and triggers C3 if flat.
 - **R4** — real save filenames match retroarch style (`Name.srm`, ROM
-  ext stripped) and the container sniff shows raw (compression off). If
-  compressed saves appear: quarantine already protects them (Decision
-  1A); owner turns `SaveRAM Compression` off (M1).
+  ext stripped), plus the container census (raw vs RZIP). Compressed
+  saves are fully supported via the inbound transcode (byte-inventory
+  1) — the census only tells us which path the hardware validation
+  exercises; no user action either way. (The original quarantine +
+  "turn compression off" posture was superseded 2026-07-10 by owner
+  direction: target users arrive with arbitrary compression settings,
+  and per-game re-saving is not an acceptable ask.)
 - **R5** — ROM root(s) + flat `roms/<system>/` layout; the real system
   dir names for `system_paths` and `rom_roots`.
 - **R6** — which volumes hold saves and ROMs: internal
@@ -350,14 +389,20 @@ data. The findings below are already conclusive:
   app-private (adb's shell uid could read it on this build; the app
   cannot) — confirming the spec's model of enrollment-time path
   configuration + preflight validation, not live-cfg parsing.
-- **R4 ✗ — contingency C2 ACTIVE:** `save_file_compression = true`;
-  the sniffed save is RZIP. Under 2.1-parity quarantine, **zero saves
-  sync until the owner turns SaveRAM Compression OFF** (recon M1).
-  Existing compressed files then decompress organically as each game
-  is next saved in-game (rzipstream reads both containers
-  transparently and writes per the setting). `savestate_file_
-  compression = true` needs no action — states archive verbatim
-  (format-matrix §7).
+- **R4 — compression ON, RESOLVED as supported (owner-directed
+  2026-07-10):** `save_file_compression = true`; the sniffed save is
+  RZIP. The initial posture (quarantine + instruct the owner to turn
+  compression off) was rejected as unreasonable for target users —
+  they arrive with arbitrary settings, and per-game re-saving is not
+  an onboarding step. Resolution: **inbound RZIP transcode** in the
+  Kotlin engine (byte-inventory 1) — no user action, no setting flip,
+  no on-device file rewriting (an enrollment-time bulk decompress was
+  considered and rejected: it edits user save files in place, races a
+  running RetroArch, and silently breaks again if the user re-enables
+  compression). The owner keeps compression ON — the Thor thereby
+  exercises the transcode path with real data during hardware
+  validation. `savestate_file_compression = true` needs no action —
+  states archive verbatim (format-matrix §7).
 - **R3 — STRUCTURAL FINDING, decision required (below):** save
   sorting is **by CORE NAME** (`sort_savefiles_enable = true`,
   by-content `false`): the device layout is
@@ -424,8 +469,9 @@ shape — and the spec builds exactly as originally written. Cost:
 one-time manual file surgery on a working setup, and RetroArch's save
 lookup changes for everything played thereafter.
 
-Either option still requires the R4 compression flip. If A is chosen,
-the affected sections are: file table #4 (binding store + duplicate
+Neither option requires any compression action — R4 is resolved by the
+inbound transcode (no user-facing compression handling remains). If A
+is chosen, the affected sections are: file table #4 (binding store + duplicate
 picker in the app module), byte-inventory item 6 (late-materialize
 rule), AC2/AC6 (binding + duplicate cases), and C3 (flat layout stays
 a future contingency; by-core becomes supported behavior).
@@ -436,7 +482,7 @@ a future contingency; by-core becomes supported behavior).
 |---|------|------|
 | 1 | `src/platforms/android/thor_recon.sh` | On-device recon (already on branch — recon tooling, not product code). |
 | 2 | `src/platforms/android/{settings,build}.gradle.kts`, `gradle.properties`, `gradlew*`, `gradle/wrapper/*`, `.gitignore` | Gradle skeleton, pinned wrapper + dependency versions (Kotlin, JGit, JUnit, WorkManager, security-crypto). |
-| 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor, sparse), `ContainerSniff` (RZIP magic, quarantine class), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `StateArchive` (five shapes, size cap), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
+| 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor, sparse), `ContainerSniff` (RZIP magic) + `RzipCodec` (inbound decode via `Inflater`, reference-oracle-validated, bomb cap, named-skip failure path; payload-compare helpers), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `StateArchive` (five shapes, size cap), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
 | 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste + ordered ROM-roots selection across volumes; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
 | 5 | `config/platform_maps/retroarch_android.json` | → schema 2.0: `save_name_style: retroarch`, `save_container: raw`, `rom_roots`, `system_paths` — every value recon-validated (R3/R5), informational `_notes` for the storage constraint. |
 | 6 | `tests/fixtures/conformance/` | Corpus: `cases/` + `expected/` + `generate_expected.sh` + `README.md`. |
@@ -462,14 +508,20 @@ Open-Item precedent), don't fix it in-lane.
 
 1. **Conformance (the primary gate):** every corpus case produces
    byte-identical output from the Kotlin implementation and the
-   committed shell-reference expected files — canonical paths + rc
-   classes, both `.conflict` shapes, `.local` names/bytes, device JSON,
-   `.gitignore` seed, all four commit-message shapes. The shell-side
-   test regenerates `expected/` identically under busybox ash in both
-   privilege passes.
+   committed expected files (oracle per row class: the shell reference
+   for name/conflict/commit/JSON rows; the vendored rzip reference for
+   container-transcode rows) — canonical paths + rc classes, RZIP
+   decode payloads, both `.conflict` shapes, `.local` names/bytes,
+   device JSON, `.gitignore` seed, all four commit-message shapes. The
+   shell-side test regenerates its rows' `expected/` identically under
+   busybox ash in both privilege passes.
 2. **Unit (Kotlin):** mapper style table round-trips
-   (device→canonical→device per style); quarantine rc-3 semantics with
-   the named log line; ROM-anchor beats heuristic; sparse skip rc-2;
+   (device→canonical→device per style); RZIP transcode semantics —
+   healthy RZIP (incl. multichunk) decodes byte-exact to the reference
+   fixtures' payloads, corrupt/truncated/oversized-header inputs skip
+   with the named log line and store nothing, and a device-side
+   recompression of an identical payload produces NO commit
+   (payload-compare); ROM-anchor beats heuristic; sparse skip rc-2;
    phase state-file lifecycle (sentinel/commit/clean-shutdown ordering,
    offline-deferred cold-start sentinel); ordered multi-root
    ROM-anchoring (first match wins; absent root → sparse skip, named
@@ -493,9 +545,12 @@ Open-Item precedent), don't fix it in-lane.
    (device registered on GitHub) with the ROM roots pointed at the
    Thor's SD card; cold start materializes existing repo saves for
    owned ROMs — ROM-anchored against the SD-resident ROM tree; play →
-   save → canonical name appears on GitHub; boot pull applies a remote
-   change; a WorkManager periodic cycle fires with the app
-   backgrounded; results in the field notes doc.
+   save → canonical name appears on GitHub, **with SaveRAM Compression
+   left ON** (recon-confirmed reality): the device's RZIP file lands in
+   the repo as raw payload, and a materialized raw save loads correctly
+   in RetroArch — the transcode path proven on hardware end to end;
+   boot pull applies a remote change; a WorkManager periodic cycle
+   fires with the app backgrounded; results in the field notes doc.
 7. **Three-device round-trip (owner-run):** the
    `android-validation.md` protocol passes across Brick ⇆ Thor ⇆ Deck —
    canonical on-repo names, sha256 byte-match at each hop, sparse
@@ -519,11 +574,15 @@ Open-Item precedent), don't fix it in-lane.
   RetroArch's save/state dirs to shared storage (one-time, in
   RetroArch's own UI); enrollment preflight permanently guards this
   with a named error. No code change.
-- **C2 — save compression on (R4 fails):** existing quarantine
-  semantics protect the repo; owner flips `SaveRAM Compression` off.
-  The Phase-3 codec (`tools/rzip`) exists if Android ever needs to
-  decode in place, but wiring it is NOT 3.2a (parity is with 2.1's
-  quarantine behavior).
+- **C2 — RZIP decode failure path (compression itself is SUPPORTED
+  via the inbound transcode — see R4 resolution):** a corrupt or
+  truncated RZIP, or a header claiming an absurd decompressed size,
+  is skipped with a named log line and never stored — the
+  never-store-garbage guarantee survives the dequarantine. If decode
+  failures turn out to be common on real hardware (not expected —
+  the format is RetroArch's own), that is a defect investigation, not
+  a data-loss event: the device file is untouched and RetroArch still
+  reads it.
 - **C3 — flat saves, no sorting (R3 = flat):** the shell mapper
   requires a `<system_dir>` path component, so flat is out of the 2.1
   parity contract. Preferred resolution: owner enables "Sort Saves into
@@ -553,7 +612,13 @@ Open-Item precedent), don't fix it in-lane.
   markers.
 - Status UI, notifications polish, log viewer, WorkManager tuning,
   battery instrumentation (3.2c).
-- RZIP decode/encode on Android (quarantine only — 2.1 parity).
+- RZIP ENCODE on Android (outbound recompression / a
+  `save_container: rzip` materialization mode) — unnecessary:
+  `rzipstream` reads raw regardless of the compression setting, so
+  materialization always writes raw. Decode-only ships (byte-inv. 1).
+- Dequarantining the SHELL platforms (the Phase-3 shell integration of
+  `tools/rzip`) — their fleet reality is raw; stays scheduled Phase-3
+  work, out of this sprint's lane.
 - SAF / Play Store compliance; any store distribution.
 - Save-state restore/cross-device state sync (project-wide gate).
 - Non-RetroArch emulators on Android (recon M7 inventories only).

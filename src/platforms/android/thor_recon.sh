@@ -383,6 +383,49 @@ else
 fi
 out "(if the real ROM root is none of the probed names, re-run with CONTINUITY_ROM_ROOTS=/abs/path — the volume listings above show the candidates)"
 
+# --- Frontends (mapping-seed evidence for issue #14) ------------------
+# The frontend is where the user already declared folder->system->core;
+# ES-DE keeps its config on shared storage (passively readable),
+# Daijisho keeps it app-private (needs the user's export gesture, M8).
+
+# probe_esde <volume-root> — report an ES-DE config dir if present.
+probe_esde() {
+    _es="$1/ES-DE"
+    [ "$(dev_test_dir "$_es")" = "no" ] && return 0
+    out "$_es: $(dev_test_dir "$_es")"
+    for _f in "$_es/settings/es_settings.xml" "$_es/es_settings.xml"; do
+        if [ "$(dev_test_file "$_f")" = "yes" ]; then
+            out "  es_settings.xml: $_f"
+            _romdir=$(run_dev "cat \"$_f\"" | sed -n 's/.*name="ROMDirectory" *value="\([^"]*\)".*/\1/p' | head -1)
+            [ -n "$_romdir" ] && out "  ROMDirectory = $_romdir"
+        fi
+    done
+    out "  custom_systems/es_systems.xml: $(dev_test_file "$_es/custom_systems/es_systems.xml")"
+    if [ "$(dev_test_dir "$_es/gamelists")" = "yes" ]; then
+        out "  gamelists (active systems):"
+        run_dev "ls -p \"$_es/gamelists\"" | grep '/$' | head -40 | while IFS= read -r d; do
+            [ -z "$d" ] && continue
+            out "    ${d%/}"
+        done
+    fi
+}
+
+section "Frontends (system/core/ROM-path config sources)"
+probe_esde "/storage/emulated/0"
+if [ -n "$vols" ]; then
+    printf '%s\n' "$vols" | while IFS= read -r v; do
+        [ -z "$v" ] && continue
+        probe_esde "/storage/$v"
+    done
+fi
+dj_pkg=$(run_dev 'pm list packages' | sed -n 's/^package://p' | grep -i daijishou | head -1 || true)
+if [ -n "$dj_pkg" ]; then
+    out "Daijisho package: $dj_pkg"
+    out "Daijisho live config: Android/data/$dj_pkg (app-private, listing: $(dev_test_dir "/storage/emulated/0/Android/data/$dj_pkg")) — use the export flow (checklist M8)"
+else
+    out "Daijisho package: not found (note: package-visibility filtering can hide it in Termux/local mode — M8 still applies if installed)"
+fi
+
 # --- Network (sanity only) -------------------------------------------
 section "Network"
 if [ "$(run_dev 'ping -c 1 -W 3 github.com >/dev/null 2>&1 && echo ok')" = "ok" ]; then
@@ -401,6 +444,7 @@ out "  M4. Settings -> Directory -> 'Saves' and 'Save States': the exact paths s
 out "  M5. Which RetroArch build is actually used to play (Play Store / buildbot APK / 32-bit)?"
 out "  M6. Where do ROMs live (exact folder), and is the layout one folder per system?"
 out "  M7. Any other emulators whose saves should sync eventually (standalone cores, Dolphin, Drastic...)? (Out of 3.2a scope — inventory only.)"
+out "  M8. If Daijisho is (or was) the frontend: Settings -> export/backup the platform configuration to a file on shared storage and send it back with this report (mapping-seed fixture for issue #14)."
 
 out ""
 out "Recon complete. Send this file back: $report"

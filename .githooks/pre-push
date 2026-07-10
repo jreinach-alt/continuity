@@ -2,10 +2,11 @@
 # Continuity pre-push hook — tier-selecting wrapper over scripts/gate.sh.
 #
 # Ordinary pushes run the FAST gate (~15s: CRLF + shellcheck). The FULL
-# gate (~4min: both suite passes + shipped-PAK integrity) auto-escalates
-# when the pushed range touches build/Continuity.pak — pre-merge, the
-# deployed device's legacy OTA channel follows this branch's head, so a
-# PAK-bearing push is a device delivery and gets device-delivery rigor.
+# gate (~4min: both suite passes + shipped-artifact integrity)
+# auto-escalates when the pushed range touches a committed device
+# artifact — build/Continuity.pak (NextUI) or build/Continuity-muos.app
+# (muOS). One pinned commit serves both, so either changing is a device
+# delivery and gets device-delivery rigor.
 #
 # Overrides:
 #   CONTINUITY_GATE=full git push    force the full gate
@@ -34,8 +35,9 @@ if [ -z "$TIER" ]; then
             TIER=full
             break
         fi
-        if ! git diff --quiet "$remote_sha".."$local_sha" -- build/Continuity.pak 2>/dev/null; then
-            printf 'pre-push: push carries PAK changes (device-consequential) — full gate\n'
+        if ! git diff --quiet "$remote_sha".."$local_sha" \
+                -- build/Continuity.pak build/Continuity-muos.app 2>/dev/null; then
+            printf 'pre-push: push carries committed-artifact changes (device-consequential) — full gate\n'
             TIER=full
             break
         fi

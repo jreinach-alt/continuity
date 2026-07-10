@@ -40,7 +40,11 @@ if command -v shellcheck >/dev/null 2>&1; then
     if [ "$TIER" = "fast" ]; then
         # Fast tier lints only the outgoing delta (upstream..HEAD plus
         # any uncommitted edits) — the full tier re-lints everything.
-        sc_files=$( (git diff --name-only @{upstream}..HEAD 2>/dev/null;                      git diff --name-only HEAD 2>/dev/null;                      git ls-files --others --exclude-standard 2>/dev/null)                    | sort -u | grep '\.sh$'                    | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done                    | grep -v '^upstream/' || true)
+        # Skip upstream/ (vendored) and build/ (generated committed
+        # artifacts — their scripts are copies of already-linted src/
+        # files, and the muOS app's task entries carry spaces in their
+        # names, which would break the xargs split below).
+        sc_files=$( (git diff --name-only @{upstream}..HEAD 2>/dev/null;                      git diff --name-only HEAD 2>/dev/null;                      git ls-files --others --exclude-standard 2>/dev/null)                    | sort -u | grep '\.sh$'                    | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done                    | grep -Ev '^(upstream|build)/' || true)
         if [ -n "$sc_files" ]; then
             # shellcheck disable=SC2086
             printf '%s\n' "$sc_files" | xargs shellcheck -x --severity=error
@@ -86,10 +90,19 @@ else
     printf 'gate(full): unprivileged pass skipped (not root or setpriv missing)\n' >&2
 fi
 
-printf 'gate(full): shipped-PAK integrity... '
-if [ -f build/Continuity.pak/checksums.txt ]; then
+# Shipped-artifact integrity: byte-verify every committed artifact's
+# checksums manifest exactly as the device's preflight does. Both the
+# NextUI PAK and the muOS app are served by one pinned commit, so a
+# publish delivers to the whole fleet — both get verified here.
+#   $1 = artifact dir holding checksums.txt (paths relative to it)
+verify_artifact_checksums() {
+    _va_dir="$1"
+    if [ ! -f "$_va_dir/checksums.txt" ]; then
+        printf 'skipped (no manifest)\n'
+        return 0
+    fi
     (
-        cd build/Continuity.pak
+        cd "$_va_dir"
         while IFS=' ' read -r sum size path; do
             [ -n "$path" ] || continue
             actual_size=$(wc -c < "$path")
@@ -99,21 +112,41 @@ if [ -f build/Continuity.pak/checksums.txt ]; then
                 exit 1
             fi
         done < checksums.txt
-    )
+    ) || exit 1
     printf 'ok\n'
-else
-    printf 'skipped (no manifest)\n'
-fi
+}
+
+printf 'gate(full): shipped-PAK integrity... '
+verify_artifact_checksums build/Continuity.pak
+
+# The muOS artifact's manifest lives one level in (.continuity/app),
+# with paths relative to that app dir — the same layout preflight reads
+# on the card.
+printf 'gate(full): shipped-muOS-app integrity... '
+verify_artifact_checksums build/Continuity-muos.app/.continuity/app
 
 if command -v qemu-aarch64-static >/dev/null 2>&1; then
     if [ -f build/Continuity.pak/bin/busybox ]; then
-        printf 'gate(full): busybox validation matrix... '
+        printf 'gate(full): busybox validation matrix (PAK)... '
         sh scripts/validate_busybox.sh build/Continuity.pak/bin/busybox >/dev/null
         printf 'ok\n'
     fi
     if [ -f build/Continuity.pak/bin/git ]; then
-        printf 'gate(full): bundled git under qemu... '
+        printf 'gate(full): bundled git under qemu (PAK)... '
         qemu-aarch64-static build/Continuity.pak/bin/git --version >/dev/null
+        printf 'ok\n'
+    fi
+    # The muOS app ships the same binary class — smoke it too when present
+    # (it is byte-identical to the PAK's by build-time byte-compare, but
+    # the artifact is committed separately, so verify what actually ships).
+    if [ -f build/Continuity-muos.app/.continuity/app/bin/busybox ]; then
+        printf 'gate(full): busybox validation matrix (muOS)... '
+        sh scripts/validate_busybox.sh build/Continuity-muos.app/.continuity/app/bin/busybox >/dev/null
+        printf 'ok\n'
+    fi
+    if [ -f build/Continuity-muos.app/.continuity/app/bin/git ]; then
+        printf 'gate(full): bundled git under qemu (muOS)... '
+        qemu-aarch64-static build/Continuity-muos.app/.continuity/app/bin/git --version >/dev/null
         printf 'ok\n'
     fi
 else

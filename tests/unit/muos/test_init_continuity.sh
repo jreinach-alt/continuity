@@ -46,6 +46,7 @@ printf '0.1.0-test\n' > "$APP/version.txt"
 
 run_hook() {
     env -i PATH="$PATH" HOME="$TEST_TMPDIR" \
+        CONTINUITY_MUOS_SD_PRIMARY="$TEST_TMPDIR/absent" \
         CONTINUITY_PID_FILE="$TEST_TMPDIR/continuity.pid" "$@" \
         busybox ash "$SD/MUOS/init/continuity.sh"
 }
@@ -98,6 +99,30 @@ run_hook >/dev/null 2>&1 || rc=$?
 assert_eq "stale pid tolerated" "0" "$rc"
 sleep 1
 assert_file_exists "daemon restarted past stale pid" "$TEST_TMPDIR/daemon_started"
+
+# ── 4: bind-mount execution path (the field suspect) ────────────────
+# muOS bind-mounts MUOS/init to /run/muos/storage/init; a hook executed
+# through the bind path must NOT trust $0 — the primary-mount probe has
+# to find the real card. Simulate: run the hook from an unrelated dir
+# while the app lives under the probed primary.
+
+BIND="$TEST_TMPDIR/runmuos/storage/init"
+mkdir -p "$BIND"
+cp "$HOOK" "$BIND/continuity.sh"
+chmod +x "$BIND/continuity.sh"
+rm -f "$TEST_TMPDIR/daemon_started" "$TEST_TMPDIR/continuity.pid"
+rc=0
+env -i PATH="$PATH" HOME="$TEST_TMPDIR" \
+    CONTINUITY_MUOS_SD_PRIMARY="$SD" \
+    CONTINUITY_PID_FILE="$TEST_TMPDIR/continuity.pid" \
+    busybox ash "$BIND/continuity.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "bind-path hook exits 0" "0" "$rc"
+sleep 1
+assert_file_exists "bind-path hook found app via probe" "$TEST_TMPDIR/daemon_started"
+assert_eq "breadcrumb records real \$0 (bind path)" "1" \
+    "$(grep -c "boot init hook: \$0=$BIND/continuity.sh" "$SD/.continuity/launch.log")"
+assert_eq "bind-path breadcrumb records probed sd" "1" \
+    "$(grep -c "\$0=$BIND/continuity.sh sd=$SD app=" "$SD/.continuity/launch.log")"
 
 printf '\ntest_init_continuity: %d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

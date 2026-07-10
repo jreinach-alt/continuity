@@ -286,15 +286,30 @@ pf_check_path_resolution() {
     fi
 }
 
-# pf_check_boot_hook — the deferred boot-hook recon: record what this
-# firmware's init offers so the validation round can wire the daemon
-# start. Pure observation, never a failure.
+# pf_check_boot_hook — boot-hook diagnostics: is the hook installed,
+# did muOS EVER run it (breadcrumb), and what does the firmware config
+# say about the User Init Scripts toggle. Observation only, except the
+# one actionable case: hook installed but never executed -> warn with
+# the toggle instruction (field case: silent no-start after reboot,
+# build 20260710-0003).
 pf_check_boot_hook() {
-    local initd muxscript
+    local initd muxscript hook crumb toggle
     initd=$(ls "${PF_INITD:-/etc/init.d}" 2>/dev/null | tr '\n' ' ' | cut -c1-120)
     muxscript=$(ls "${PF_MUOS_SCRIPT_DIR:-/opt/muos/script}" 2>/dev/null | head -20 | tr '\n' ' ' | cut -c1-160)
     pf_emit "info" "boot-hook" "init.d: ${initd:-unreadable}"
     pf_emit "info" "boot-hook" "/opt/muos/script: ${muxscript:-unreadable}"
+
+    hook="$CONTINUITY_SD_ROOT/MUOS/init/continuity.sh"
+    crumb=$(grep 'boot init hook' "$CONTINUITY_SD_ROOT/.continuity/launch.log" 2>/dev/null | tail -1 | cut -c1-200)
+    toggle=$(grep -ri 'user_init\|userinit' "${PF_MUOS_CONFIG_DIR:-/opt/muos/config}" 2>/dev/null | head -2 | tr '\n' ' ' | cut -c1-160)
+    if [ ! -f "$hook" ]; then
+        pf_emit "info" "boot-hook" "MUOS/init/continuity.sh not installed — daemon starts via Task Toolkit only"
+    elif [ -n "$crumb" ]; then
+        pf_emit "ok" "boot-hook" "hook has run: ${crumb}"
+    else
+        pf_emit "warn" "boot-hook" "hook installed but NO run breadcrumb — enable Configuration > General Settings > Advanced Settings > User Init Scripts, then reboot (if that setting does not exist on this muOS version, report it)"
+    fi
+    pf_emit "info" "boot-hook" "firmware config mentions: ${toggle:-nothing matching user_init}"
 }
 
 # pf_run — run every check, write the report.

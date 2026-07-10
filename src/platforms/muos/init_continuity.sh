@@ -14,22 +14,45 @@
 # - setsid: muOS kills a spawner's process group when it exits (the
 #   Task Toolkit field failure) — assume boot scripts get the same
 #   treatment and detach into our own session.
+# - NEVER derive the SD root from $0: muOS bind-mounts MUOS/init to
+#   /run/muos/storage/init, and a hook executed through the bind path
+#   would resolve $0/../.. to /run/muos (tmpfs) — breadcrumb invisible
+#   and gone at reboot, app dir "missing", silent no-op (suspected in
+#   the first on-device boot-hook attempt, build 20260710-0003).
+#   Probe the real mount points instead, and RECORD $0 in the
+#   breadcrumb so the field tells us where muOS runs hooks from.
 #
-# Test hooks: CONTINUITY_SD_ROOT, CONTINUITY_APP_DIR, CONTINUITY_PID_FILE.
+# Test hooks: CONTINUITY_SD_ROOT, CONTINUITY_MUOS_SD_PRIMARY,
+# CONTINUITY_APP_DIR, CONTINUITY_PID_FILE.
 set -e
 
-SD="${CONTINUITY_SD_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# SD root: explicit override, else the first candidate carrying an app
+# install, else the primary mount (breadcrumb still lands somewhere
+# durable and PC-visible). $0-derivation is LAST, and only as a
+# candidate — see header.
+sd_candidates="${CONTINUITY_MUOS_SD_PRIMARY:-/mnt/mmc}
+/mnt/sdcard
+$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd || true)"
+
+SD="${CONTINUITY_SD_ROOT:-}"
+if [ -z "$SD" ]; then
+    SD=$(printf '%s\n' "$sd_candidates" | while IFS= read -r d; do
+        [ -n "$d" ] && [ -d "$d/.continuity/app" ] && { printf '%s\n' "$d"; break; }
+    done)
+fi
+[ -n "$SD" ] || SD="${CONTINUITY_MUOS_SD_PRIMARY:-/mnt/mmc}"
+
 APP="${CONTINUITY_APP_DIR:-$SD/.continuity/app}"
 PIDF="${CONTINUITY_PID_FILE:-/tmp/continuity.pid}"
 
 mkdir -p "$SD/.continuity" 2>/dev/null || true
-printf '[%s] boot init hook, app=%s version=%s\n' \
-    "$(date '+%Y-%m-%d %H:%M:%S')" "$APP" \
+printf '[%s] boot init hook: $0=%s sd=%s app=%s version=%s\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "$0" "$SD" "$APP" \
     "$(cat "$APP/version.txt" 2>/dev/null || printf 'unknown')" \
     >> "$SD/.continuity/launch.log" 2>/dev/null || true
 
-# Not installed (or half-copied) — a boot hook must fail silent, the
-# breadcrumb above is the record.
+# Not installed (or half-copied) — a boot hook must fail silent; the
+# breadcrumb above (with $0 and the probed sd) is the record.
 [ -f "$APP/scripts/continuity_daemon.sh" ] || exit 0
 
 # Already running (daemon PID check, same semantics as the daemon's own

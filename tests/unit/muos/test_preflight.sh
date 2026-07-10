@@ -263,6 +263,27 @@ rc=0; PF_INITD="$TEST_TMPDIR/initd" \
      PF_MUOS_SCRIPT_DIR="$TEST_TMPDIR/muxscript" pf_run "$R14" || rc=$?
 assert_contains "boot-hook init.d captured" "$R14" "init.d: S01muos"
 assert_contains "boot-hook script dir captured" "$R14" "system.sh"
+# no hook installed -> informational
+assert_contains "hook-absent reported" "$R14" "not installed"
+
+# --- Test 15: boot-hook run evidence (the silent-no-start field case) ---
+mkdir -p "$SDROOT/MUOS/init"
+printf '#!/bin/sh\n' > "$SDROOT/MUOS/init/continuity.sh"
+R15="$TEST_TMPDIR/r15.txt"
+rc=0; pf_run "$R15" || rc=$?
+assert_eq "hook-no-crumb run stays green (warn only)" "0" "$rc"
+assert_contains "hook installed but never ran -> toggle warning" "$R15" \
+    "NO run breadcrumb"
+assert_contains "toggle instruction included" "$R15" "User Init Scripts"
+
+mkdir -p "$SDROOT/.continuity"
+printf '[2026-07-10 08:00:00] boot init hook: $0=/run/muos/storage/init/continuity.sh sd=/mnt/mmc app=x version=y\n' \
+    >> "$SDROOT/.continuity/launch.log"
+R15b="$TEST_TMPDIR/r15b.txt"
+rc=0; pf_run "$R15b" || rc=$?
+assert_contains "hook run evidence surfaced" "$R15b" "hook has run:"
+assert_contains "breadcrumb content included" "$R15b" "/run/muos/storage/init/continuity.sh"
+rm -rf "$SDROOT/MUOS/init" "$SDROOT/.continuity"
 
 # --- Report ---
 printf '\n%d passed, %d failed\n' "$passed" "$failed"

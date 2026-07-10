@@ -243,24 +243,31 @@ for s in "gb/Game.srm" "gb/Game.sav" "gb/Game.rtc" "gb/Name (USA).srm" "gb/A's.r
 done
 assert_nomatch "save_re rejects state" "sc/Game.st0" "$save_re"
 
-# every state shape (matrix §4): .st[0-9], .state, .stateN, .state.N, .state.auto
-for s in "Game.st0" "Game.st9" "Game.state" "Game.state1" "Game.state.0" "Game.state.auto"; do
+# every state shape (matrix §4) PLUS the muOS/RetroArch realities
+# (field 2026-07-10): multi-digit slots and .png thumbnails
+for s in "Game.st0" "Game.st9" "Game.state" "Game.state1" "Game.state.0" \
+         "Game.state.auto" "Game.state10" "Game.state123" \
+         "Game.state9.png" "Game.state10.png" "Game.state.png"; do
     assert_match "state_re matches $s" "$s" "$state_re"
     assert_match "union_re matches $s" "$s" "$union_re"
 done
 assert_nomatch "state_re rejects .srm" "Game.srm" "$state_re"
+assert_nomatch "state_re rejects .statement" "Game.statement" "$state_re"
+assert_nomatch "state_re rejects state backup junk" "Game.state1.bak" "$state_re"
 
 # find wrappers: save class + all five state shapes
 mkdir -p "$TEST_TMPDIR/fscan/SFC" "$TEST_TMPDIR/fscan/states"
 cd "$TEST_TMPDIR/fscan"
 for n in "Game.srm" "Game.sav" "Game.rtc"; do : > "SFC/$n"; done
 : > "SFC/ignore.txt"
-for n in "S.st0" "S.state" "S.state3" "S.state.0" "S.state.auto"; do : > "states/$n"; done
+for n in "S.st0" "S.state" "S.state3" "S.state.0" "S.state.auto" \
+         "S.state10" "S.state10.png"; do : > "states/$n"; done
 : > "states/ignore.log"
+: > "states/S.statement"
 n_saves=$(pm_find_saves "$TEST_TMPDIR/fscan/SFC" | grep -c .)
 assert_eq "pm_find_saves finds 3 save-class files" "3" "$n_saves"
 n_states=$(pm_find_states "$TEST_TMPDIR/fscan/states" | grep -c .)
-assert_eq "pm_find_states finds all 5 state shapes" "5" "$n_states"
+assert_eq "pm_find_states finds all 7 state shapes (multi-digit + png)" "7" "$n_states"
 cd "$REPO_ROOT"
 
 # =====================================================================

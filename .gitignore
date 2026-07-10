@@ -22,3 +22,4 @@ Thumbs.db
 # Build output (intermediate artifacts)
 build/*
 !build/Continuity.pak/
+!build/Continuity-muos.app/

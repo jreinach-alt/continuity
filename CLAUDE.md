@@ -8,9 +8,11 @@ Continuity is a cross-platform SRAM save sync tool for retro gaming handhelds an
 
 **Target platforms:**
 - TrimUI Brick (NextUI) — primary, BusyBox ash
-- Anbernic devices (Onion OS) — BusyBox ash
+- Anbernic RG40XX V (muOS) — BusyBox ash
 - Steam Deck (RetroDeck) — full Linux
 - Android (RetroArch) — Java/Kotlin
+- Miyoo Mini family (Onion OS) — future; deferred until Onion-capable
+  hardware is in the fleet (ARMv7 — new cross-compile target)
 
 ## Repository Structure
 
@@ -19,7 +21,7 @@ src/
   core/           — Shared sync engine logic (shell, portable)
   platforms/
     nextui/       — TrimUI Brick platform client + PAK
-    onion/        — Onion OS platform client
+    muos/         — Anbernic RG40XX V (muOS) platform client
     retrodeck/    — Steam Deck / RetroDeck client
     android/      — Android RetroArch client
   enrollment/     — Device setup and credential import
@@ -27,7 +29,7 @@ config/
   system_taxonomy.json      — Canonical system names and aliases
   platform_maps/            — Per-platform path mappings
     nextui.json
-    onion.json
+    onion.json    — future-platform placeholder (Onion OS deferred)
     retrodeck.json
     retroarch_android.json
 docs/
@@ -48,7 +50,10 @@ release/
   README.md       — the channel/publish/rollback contract
 .githooks/        — The pre-push quality gate (core.hooksPath target)
 build/
-  Continuity.pak/ — The COMMITTED shipped artifact (OTA serves it);
+  Continuity.pak/      — COMMITTED shipped artifact, NextUI (OTA serves it)
+  Continuity-muos.app/ — COMMITTED shipped artifact, muOS (OTA serves it);
+                         one pinned commit serves BOTH — a publish
+                         delivers the whole fleet.
                     everything else under build/ is gitignored
 upstream/         — Upstream references (NextUI source, platform docs)
 ```
@@ -192,7 +197,7 @@ Required sections: Files Created, Files Modified, Tests Written, Deviations from
 
 ### BusyBox Ash Compatibility
 
-The TrimUI Brick and Onion OS devices run BusyBox ash. Avoid:
+The TrimUI Brick and Anbernic (muOS) devices run BusyBox ash. Avoid:
 
 | Construct | Use Instead |
 |-----------|-------------|
@@ -213,7 +218,7 @@ The TrimUI Brick and Onion OS devices run BusyBox ash. Avoid:
 ### Platform-Specific Code
 
 Each platform client in `src/platforms/<name>/` can use platform-native constructs:
-- **nextui, onion:** Must be BusyBox ash compatible
+- **nextui, muos:** Must be BusyBox ash compatible
 - **retrodeck:** May use bash, systemd, inotifywait
 - **android:** Java/Kotlin, standard Android APIs
 
@@ -234,7 +239,7 @@ Each platform client in `src/platforms/<name>/` can use platform-native construc
 Format: `<type>(<scope>): <short description>`
 
 Types: `feat`, `fix`, `test`, `docs`, `refactor`, `build`, `chore`
-Scopes: `core`, `nextui`, `onion`, `retrodeck`, `android`, `enrollment`, `config`, `tests`, `scripts`, `docs`, `tools`, `release`
+Scopes: `core`, `nextui`, `muos`, `retrodeck`, `android`, `enrollment`, `config`, `tests`, `scripts`, `docs`, `tools`, `release` (`onion` reserved for the deferred Onion OS platform)
 
 ### Testing Requirements
 
@@ -280,8 +285,11 @@ NextUI platform work.**
    from the verified tree. Never instruct anyone to copy from a git
    working tree (line-ending smudge history; see field notes).
 4. **After first enrollment, prefer OTA** (`scripts/update.sh`, tap-driven
-   on-device). Releases are CHANNELS (stable/nightly) pinned in
-   `release/channels.json` on main — never branches. Publish/promote/
+   on-device; muOS has its own `src/platforms/muos/update.sh` +
+   "Continuity Update" task serving `build/Continuity-muos.app`).
+   Releases are CHANNELS (stable/nightly) pinned in
+   `release/channels.json` on main — never branches; one pin serves both
+   the PAK and the muOS app. Publish/promote/
    rollback via `scripts/publish_channel.sh` (takes effect when the
    manifest commit is reachable from origin/main); contract in
    `release/README.md`. Card swaps are for a broken launch/update
@@ -301,9 +309,11 @@ NextUI platform work.**
      them automatically.
    - **full** (~4min: fast + suite as current user + suite
      UNPRIVILEGED (root-only-skipped branches once hid a real bug) +
-     shipped-PAK integrity: checksums, busybox matrix, git under
+     shipped-artifact integrity for BOTH committed artifacts
+     (`build/Continuity.pak` and `build/Continuity-muos.app`):
+     checksums, busybox matrix, git under
      qemu) — REQUIRED, and mostly automated, wherever a mistake
-     travels: pushes touching `build/Continuity.pak` (hook
+     travels: pushes touching either committed artifact (hook
      auto-escalates — pre-merge the device's legacy channel follows
      the branch head), every channel publish (`publish_channel.sh`
      runs it), before creating/updating a PR, and at session closeout

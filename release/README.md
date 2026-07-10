@@ -9,8 +9,13 @@ reviewable commits.
 ## The contract
 
 - A **channel** is a durable name (`stable`, `nightly`) mapping to a
-  pinned commit whose tree contains the released
-  `build/Continuity.pak`. Channel names never die; branches can.
+  pinned commit whose tree contains the released artifacts. One pin
+  serves the WHOLE FLEET: `build/Continuity.pak` (NextUI) and
+  `build/Continuity-muos.app` (muOS) both live at that commit, so a
+  single publish delivers to both platforms. (`publish_channel.sh`
+  verifies the PAK from the commit's git objects; each platform's
+  updater fetches its own artifact from the same pin.) Channel names
+  never die; branches can.
 - A **device** holds its channel identity in
   `.continuity/ota_channel` (seeded on first run from the build's
   `ota_channel.txt`, never overwritten by updates — installing a

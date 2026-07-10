@@ -277,7 +277,8 @@ actually pushed (the live saves repo, not fixtures):
 - MinUI naming embeds the ROM extension in BOTH classes (`.sfc.sav`,
   `.sfc.st0`) — direct on-repo confirmation of the canonicalization
   spec's basename rules, and real snes9x states (~800 KB) sit well
-  under the 8 MB state cap.
+  under the state cap (8 MB then; default raised to 64 MB 2026-07-09
+  for N64/Dreamcast cores — see muos-field-notes.md).
 
 Standing lesson: claims about the user's data get tested against the
 user's data — the sweep exists because a source-derived "your repo has
@@ -335,7 +336,9 @@ The owner wants states backed up even while non-portable. Shipped as
 opaque one-way backup (device → repo only): `.st0`–`.st9` under
 `$CONTINUITY_STATES_ROOT` (NextUI: `.userdata/shared/<TAG>-<core>/`)
 sync to `states/<dir>/<file>` verbatim, size-capped
-(`CONTINUITY_STATE_MAX_KB`, default 8 MB, shared gate across poll and
+(`CONTINUITY_STATE_MAX_KB`, default 64 MB — raised from 8 MB 2026-07-09
+when the RG40XX V's N64/Dreamcast states all hit the old value —
+shared gate across poll and
 sweep paths). No restore, no merge, no cross-core promises — restore
 semantics need their own spec. Portability position unchanged: states
 load only on the core (version) that wrote them.

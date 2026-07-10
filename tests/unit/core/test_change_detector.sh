@@ -188,12 +188,67 @@ done
 # silently never backed up before Sprint 2.0 — matrix §6)
 STATES="$CONTINUITY_STATES_ROOT"
 mkdir -p "$STATES/SFC-snes9x"
-for st in "Game.st0" "Game.state" "Game.state2" "Game.state.0" "Game.state.auto"; do
+for st in "Game.st0" "Game.state" "Game.state2" "Game.state.0" "Game.state.auto" \
+          "Game.state10" "Game.state10.png"; do
     printf 'state-bytes' > "$STATES/SFC-snes9x/$st"
 done
-output=$(cd_list_device_states)
+output=$(cd_list_device_states 2>/dev/null)
 state_count=$(printf '%s\n' "$output" | grep -c '.')
-assert_eq "cd_list_device_states finds all 5 shapes" "5" "$state_count"
+assert_eq "cd_list_device_states finds all 7 shapes (multi-digit + png)" "7" "$state_count"
+
+# unrecognized shapes self-document once per run (the .state10 lesson)
+export CONTINUITY_STATE_WARN_CACHE="$TEST_TMPDIR/unrec_ledger"
+printf 'x' > "$STATES/SFC-snes9x/weird.snapshot"
+w1=$(cd_list_device_states 2>&1 >/dev/null)
+w2=$(cd_list_device_states 2>&1 >/dev/null)
+case "$w1" in
+    *"Unrecognized file shape"*"weird.snapshot"*) passed=$((passed + 1)) ;;
+    *) printf 'FAIL: unrecognized shape must log, got [%s]\n' "$w1" >&2; failed=$((failed + 1)) ;;
+esac
+assert_eq "unrecognized-shape log is once per run" "" "$w2"
+out_clean=$(cd_list_device_states 2>/dev/null | grep -c "weird.snapshot") || true
+assert_eq "unrecognized shape never listed for archive" "0" "$out_clean"
+rm -f "$STATES/SFC-snes9x/weird.snapshot"
+unset CONTINUITY_STATE_WARN_CACHE
+
+# --- State size gate: 64 MB default, warn-once-per-run ledger ---
+
+# default cap is 64 MB now: a 9 MB state (over the OLD 8 MB default)
+# must pass — pins the owner's 2026-07-09 raise.
+unset CONTINUITY_STATE_MAX_KB
+dd if=/dev/zero of="$STATES/SFC-snes9x/big9mb.state" bs=1024 count=9216 2>/dev/null
+if cd_state_size_ok "$STATES/SFC-snes9x/big9mb.state" 2>/dev/null; then
+    passed=$((passed + 1))
+else
+    printf 'FAIL: 9MB state must pass the 64MB default cap\n' >&2
+    failed=$((failed + 1))
+fi
+rm -f "$STATES/SFC-snes9x/big9mb.state"
+
+# warn-once: an oversized state warns on first sight, silent after,
+# still skipped every time (field defect: 9 identical warns per poll).
+export CONTINUITY_STATE_MAX_KB=2
+export CONTINUITY_STATE_WARN_CACHE="$TEST_TMPDIR/warn_ledger"
+printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' > "$STATES/SFC-snes9x/huge.state"
+dd if=/dev/zero of="$STATES/SFC-snes9x/huge.state" bs=1024 count=3 2>/dev/null
+rc1=0; w1=$(cd_state_size_ok "$STATES/SFC-snes9x/huge.state" 2>&1) || rc1=$?
+rc2=0; w2=$(cd_state_size_ok "$STATES/SFC-snes9x/huge.state" 2>&1) || rc2=$?
+assert_eq "oversized state skipped (rc 1) first time" "1" "$rc1"
+assert_eq "oversized state skipped (rc 1) second time" "1" "$rc2"
+case "$w1" in
+    *"State too large"*) passed=$((passed + 1)) ;;
+    *) printf 'FAIL: first sight must warn, got [%s]\n' "$w1" >&2; failed=$((failed + 1)) ;;
+esac
+assert_eq "second sight is silent" "" "$w2"
+# a DIFFERENT oversized file still gets its own first warn
+dd if=/dev/zero of="$STATES/SFC-snes9x/huge2.state" bs=1024 count=3 2>/dev/null
+w3=$(cd_state_size_ok "$STATES/SFC-snes9x/huge2.state" 2>&1) || true
+case "$w3" in
+    *"State too large"*) passed=$((passed + 1)) ;;
+    *) printf 'FAIL: new oversized file must warn, got [%s]\n' "$w3" >&2; failed=$((failed + 1)) ;;
+esac
+rm -f "$STATES/SFC-snes9x/huge.state" "$STATES/SFC-snes9x/huge2.state"
+unset CONTINUITY_STATE_MAX_KB CONTINUITY_STATE_WARN_CACHE
 
 # --- Summary ---
 printf '\ntest_change_detector: %s passed, %s failed\n' "$passed" "$failed"

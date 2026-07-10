@@ -424,11 +424,43 @@ approved 2026-07-09) — pending the on-device recon confirmation (spec
 
 ## Phase 3 — Additional Platforms
 
-### Sprint 3.1 — Onion OS Client (outline)
+### Sprint 3.1 — muOS Client, Anbernic RG40XX V (in progress)
 
-New PAL implementation + enrollment trigger. Nearly identical to NextUI. Different save paths, different boot hook mechanism. Same core engine. No core code changes.
+**Status:** Spec drafted (`docs/sprints/sprint-3.1-spec.md`, DRAFT) —
+Gate 0 resolved 2026-07-09: the fleet's H700 handheld runs **muOS**
+(Onion OS has no H700 build; see Sprint 3.3). Recon script shipped;
+implementation blocked on the on-device recon report + spec approval.
 
-### Sprint 3.2 — Android Client (outline)
+New PAL implementation + enrollment trigger. Nearly identical to NextUI:
+same aarch64 arch as the Brick (binary port expected, not a new
+cross-compile), different save paths, muOS boot/task mechanism. Same
+core engine. No core code changes.
+
+### Sprint 3.2 — muOS OTA Updates
+
+**Status:** Implemented — pending owner merge (`docs/sprints/sprint-3.2-spec.md`,
+APPROVED 2026-07-10; summary in `docs/sprints/sprint-3.2-summary.md`).
+
+Ends card-swap delivery for the muOS client. A "Continuity Update" Task
+Toolkit tap fetches the pinned channel commit, verifies, and
+stage-applies the new app tree — the Brick's OTA contract (Sprints
+1.6/1.8) with muOS-native UX. Second committed artifact
+`build/Continuity-muos.app/`, assembled by `scripts/build_muos_app.sh`;
+new updater `src/platforms/muos/update.sh` (manifest-only, no legacy
+branch fallback). One pinned commit in `release/channels.json` serves
+BOTH platform artifacts, so a publish updates the whole fleet. No core
+code changes.
+
+### Sprint 3.3 — Onion OS Client (outline, deferred — no test hardware)
+
+Onion OS targets the Miyoo Mini family (ARMv7) — a NEW cross-compile
+target, not a port of the Brick binaries. Owner wants Onion support,
+but the current fleet has no Onion-capable device to validate against,
+and platform facts are validated on real hardware (project rule).
+Revisit when the fleet grows. `config/platform_maps/onion.json` is the
+placeholder.
+
+### Sprint 3.4 — Android Client (outline)
 
 Java/Kotlin app implementing the PAL interface natively. JGit for git operations. `FileObserver` for change detection. Material UI for status and conflict resolution. The conflict UI is the **native reimplementation** of the Conflict-Resolution Experience design (`docs/design/conflict-resolution-experience.md`): same on-repo `.conflict`/`.local`/trying artifacts and the same §4 resolution guards, in Kotlin rather than the shared shell controller. (Owner's Ayn Thor is the available validation device.)
 
@@ -444,7 +476,10 @@ data (RetroArch's loader accepts it as the legacy format — verified in
 source), so handoff is container transforms + metadata, no emulator
 changes. Phases S1–S3 in the doc; S1 rides with Sprint 2.0.
 **Owner decisions:** platform list = OnionOS (confirmed 2026-07-07;
-MuOS reading was wrong). Still open: auto-slot handoff default;
+MuOS reading was wrong). [2026-07-09 correction: the H700 handheld in
+the fleet runs muOS after all — Onion has no H700 build. Onion remains
+desired but is deferred until Onion-capable hardware exists; see
+Sprint 3.3.] Still open: auto-slot handoff default;
 conflict-policy approval (states = last-writer-wins per slot, history
 as undo — unlike saves). Cross-emulator tier: see
 `docs/design/state-transmutation.md` (R&D framework, perpetually

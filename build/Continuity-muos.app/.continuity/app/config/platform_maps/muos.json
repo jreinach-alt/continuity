@@ -1,0 +1,28 @@
+{
+  "_schema_version": "2.1",
+  "_description": "Path mapping for the Anbernic RG40XX V running muOS. Saves are stored PER-CORE by RetroArch (sort_savefiles_enable=true), so system_paths values are core directory names and rom_paths carries the per-system ROM folder names used for ROM-anchored identity. Every entry below is validated against the reference device's real files (CONTINUITY_RECON.txt, 2026-07-09); unproven cores are deliberately absent — the daemon logs unknown save dirs, add pairs as they are observed, never from memory.",
+  "platform": "muos",
+  "device_family": "anbernic_h700",
+  "saves_root": "/run/muos/storage/save/file",
+  "system_paths": {
+    "gb": "Gambatte",
+    "gbc": "Gambatte",
+    "gba": "mGBA",
+    "snes": "Snes9x",
+    "n64": "Mupen64Plus-Next",
+    "ps1": "PCSX-ReARMed"
+  },
+  "rom_paths": {
+    "gb": "Nintendo - GB",
+    "gbc": "Nintendo - GBC",
+    "gba": "Nintendo - GBA",
+    "snes": "Nintendo - SNES",
+    "n64": "Nintendo - N64",
+    "ps1": "Sony - PS1"
+  },
+  "save_extension": ".srm",
+  "save_name_style": "retroarch",
+  "save_container": "raw",
+  "rom_roots": ["ROMS"],
+  "_rom_roots_note": "Informational. Runtime ROM-anchoring reads $CONTINUITY_ROMS_ROOT from the PAL (/mnt/union/ROMS, muOS's unionfs merge of SD1/SD2, falling back to /mnt/mmc/ROMS), not this field."
+}

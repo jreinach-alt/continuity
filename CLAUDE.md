@@ -50,7 +50,10 @@ release/
   README.md       — the channel/publish/rollback contract
 .githooks/        — The pre-push quality gate (core.hooksPath target)
 build/
-  Continuity.pak/ — The COMMITTED shipped artifact (OTA serves it);
+  Continuity.pak/      — COMMITTED shipped artifact, NextUI (OTA serves it)
+  Continuity-muos.app/ — COMMITTED shipped artifact, muOS (OTA serves it);
+                         one pinned commit serves BOTH — a publish
+                         delivers the whole fleet.
                     everything else under build/ is gitignored
 upstream/         — Upstream references (NextUI source, platform docs)
 ```
@@ -282,8 +285,11 @@ NextUI platform work.**
    from the verified tree. Never instruct anyone to copy from a git
    working tree (line-ending smudge history; see field notes).
 4. **After first enrollment, prefer OTA** (`scripts/update.sh`, tap-driven
-   on-device). Releases are CHANNELS (stable/nightly) pinned in
-   `release/channels.json` on main — never branches. Publish/promote/
+   on-device; muOS has its own `src/platforms/muos/update.sh` +
+   "Continuity Update" task serving `build/Continuity-muos.app`).
+   Releases are CHANNELS (stable/nightly) pinned in
+   `release/channels.json` on main — never branches; one pin serves both
+   the PAK and the muOS app. Publish/promote/
    rollback via `scripts/publish_channel.sh` (takes effect when the
    manifest commit is reachable from origin/main); contract in
    `release/README.md`. Card swaps are for a broken launch/update
@@ -303,9 +309,11 @@ NextUI platform work.**
      them automatically.
    - **full** (~4min: fast + suite as current user + suite
      UNPRIVILEGED (root-only-skipped branches once hid a real bug) +
-     shipped-PAK integrity: checksums, busybox matrix, git under
+     shipped-artifact integrity for BOTH committed artifacts
+     (`build/Continuity.pak` and `build/Continuity-muos.app`):
+     checksums, busybox matrix, git under
      qemu) — REQUIRED, and mostly automated, wherever a mistake
-     travels: pushes touching `build/Continuity.pak` (hook
+     travels: pushes touching either committed artifact (hook
      auto-escalates — pre-merge the device's legacy channel follows
      the branch head), every channel publish (`publish_channel.sh`
      runs it), before creating/updating a PR, and at session closeout

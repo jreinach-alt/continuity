@@ -139,6 +139,8 @@ if ! enroll_run "$repo_url" "$device_name" "$pat"; then
 fi
 pat=""
 
+app_dir_escaped=$(printf '%s' "$CONTINUITY_APP_DIR" | sed 's/[&|\\]/\\&/g')
+
 # systemd --user unit: template the checkout path into the committed
 # unit and enable it. Failure here is a WARNING — the device is
 # enrolled; the service can be enabled by hand later.
@@ -152,7 +154,6 @@ if [ "$install_service" -eq 1 ]; then
         pal_log "warn" "Unit template missing: $unit_src — skipping service install"
     else
         mkdir -p "$unit_dir"
-        app_dir_escaped=$(printf '%s' "$CONTINUITY_APP_DIR" | sed 's/[&|\\]/\\&/g')
         sed "s|@APP_DIR@|$app_dir_escaped|g" "$unit_src" > "$unit_dst"
         if command -v "$sysctl_bin" >/dev/null 2>&1 \
             && "$sysctl_bin" --user daemon-reload \
@@ -162,6 +163,21 @@ if [ "$install_service" -eq 1 ]; then
             pal_log "warn" "Could not enable the service — run: systemctl --user enable --now continuity.service"
         fi
     fi
+fi
+
+# Desktop launcher for the conflict resolver (Sprint 2.2) — same
+# best-effort contract as the unit install: failure is a warning, never
+# a rollback (resolve_conflicts.sh still runs from a terminal). Not
+# gated on --no-service: the launcher is UI, not the daemon.
+desktop_src="$CONTINUITY_APP_DIR/src/platforms/retrodeck/continuity-resolve.desktop"
+desktop_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+if [ ! -f "$desktop_src" ]; then
+    pal_log "warn" "Launcher template missing: $desktop_src — run resolve_conflicts.sh directly"
+elif mkdir -p "$desktop_dir" && \
+     sed "s|@APP_DIR@|$app_dir_escaped|g" "$desktop_src" > "$desktop_dir/continuity-resolve.desktop"; then
+    pal_log "info" "Installed the 'Continuity — Resolve save conflicts' launcher"
+else
+    pal_log "warn" "Could not install the resolver launcher — run resolve_conflicts.sh directly"
 fi
 
 pal_log "info" "Enrolled as $device_name. Saves under $CONTINUITY_SAVES_ROOT will sync to your repo."

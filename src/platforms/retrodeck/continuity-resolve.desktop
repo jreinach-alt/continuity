@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Continuity — Resolve save conflicts
+Comment=Review and resolve save conflicts synced by Continuity
+Exec="@APP_DIR@/src/platforms/retrodeck/resolve_conflicts.sh"
+Icon=folder-sync
+Terminal=false
+Categories=Game;Utility;

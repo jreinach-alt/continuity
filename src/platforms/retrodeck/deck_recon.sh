@@ -149,6 +149,33 @@ if command -v systemctl >/dev/null 2>&1; then
     out "systemd --user reachable: $(systemctl --user is-system-running 2>/dev/null || printf 'NO (check from a desktop-mode terminal)')"
 fi
 
+section "Sprint 2.2 UI tooling (notification + resolver surfaces)"
+# R6 is inotifywait above; R7 notify-send; R8 kdialog/zenity.
+for tool in notify-send kdialog zenity; do
+    if command -v "$tool" >/dev/null 2>&1; then
+        out "$tool: $(command -v "$tool") ($("$tool" --version 2>/dev/null | head -1 || printf 'version unknown'))"
+    else
+        out "$tool: NOT FOUND"
+    fi
+done
+if command -v notify-send >/dev/null 2>&1; then
+    if notify-send --help 2>/dev/null | grep -q -- '--print-id'; then
+        out "notify-send --print-id/-r replacement: supported"
+    else
+        out "notify-send --print-id/-r replacement: NOT supported (message-debounce path applies)"
+    fi
+fi
+out "shell display env: DISPLAY=${DISPLAY:-unset} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}"
+if command -v systemctl >/dev/null 2>&1; then
+    svc_env=$(systemctl --user show-environment 2>/dev/null | grep -E '^(DISPLAY|WAYLAND_DISPLAY|DBUS_SESSION_BUS_ADDRESS)=' || true)
+    if [ -n "$svc_env" ]; then
+        out "user-manager env (what the daemon's notify-send sees):"
+        printf '%s\n' "$svc_env" | while IFS= read -r line; do out "  $line"; done
+    else
+        out "user-manager env: no DISPLAY/WAYLAND/DBUS vars exported to systemd --user"
+    fi
+fi
+
 section "Network"
 if ping -c 1 -W 3 github.com >/dev/null 2>&1; then
     out "github.com reachable via ping"

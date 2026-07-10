@@ -404,12 +404,24 @@ approved 2026-07-09) — pending the on-device recon confirmation (spec
 
 ---
 
-### Sprint 2.2 — RetroDeck Daemon (inotify-based)
+### Sprint 2.2 — RetroDeck Daemon (inotify-based) + Conflict UI
+
+**Status:** Implemented on `claude/sprint-2-2-retrodeck-conflict-3musse` —
+pending owner review/merge (PR review is the spec-approval surface;
+headless session, see summary) and the on-device pass (spec AC16 +
+recon R6–R8). Spec: `docs/sprints/sprint-2.2-spec.md`; summary:
+`docs/sprints/sprint-2.2-summary.md`.
 
 **Scope:**
-- Daemon using `inotifywait` for event-driven change detection (replaces polling)
+- Daemon using `inotifywait` for event-driven change detection (replaces
+  polling; one-shot-with-timeout, named poll fallback, adaptive idle
+  housekeeping)
 - Same core sync engine, different detection trigger
-- Conflict resolution via desktop notification
+- Conflict resolution via desktop notification (`pal_on_sync_result` →
+  notify-send, red persistent + debounced) and the shared
+  `conflict_ui.sh` controller rendered through `pal_ui_retrodeck.sh`
+  (kdialog → zenity → CLI) via `resolve_conflicts.sh` + a desktop
+  launcher
 
 ---
 

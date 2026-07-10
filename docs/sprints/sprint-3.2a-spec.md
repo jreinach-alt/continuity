@@ -235,6 +235,24 @@ to the shell reference, these are the exact bytes `core` must produce:
    same username convention as the shell credential helper. Repo clone
    lives in app-private internal storage (`filesDir/repo`) — it is
    device-local state, not user-visible data.
+8. **Backup archive (Android-INTRODUCED repo surface, owner-directed
+   2026-07-10 — not a shell-reproduced artifact):** a save-class file
+   the mapper cannot canonicalize — its system is outside the
+   taxonomy/platform map (the Thor's Saturn save), or its dir is
+   unmapped — is archived one-way to
+   `backup/<device_name>/<device-rel-save-dir>/<filename>.bak` on
+   main: VERBATIM device bytes (no transcode — these formats are
+   exactly the unverified ones), state-cap sized, committed with the
+   normal trailers, never materialized anywhere, never conflicting
+   (same-path overwrite is fine; it is a backup, and git history
+   keeps every version). The **`.bak` suffix is load-bearing**: the
+   current shell fleet's save-class filters are extension-anchored,
+   and `boot_pull` HARD-FAILS on save-class repo paths it cannot map
+   (`src/core/boot_pull.sh:82-85` — filed as issue #16); `.bak`
+   makes the archive invisible to deployed clients. Promotion of a
+   backed-up system to canonical sync is issue #15 (taxonomy entry +
+   byte-portability verification per system); this archive is the
+   don't-lose-data floor under that queue.
 
 ## Conformance suite (architecture Decision 3 — mandatory)
 
@@ -444,15 +462,29 @@ data. The findings below are already conclusive:
   `gb→GB, gbc→GBC, gba→GBA, nes→NES, snes→SNES, genesis→Genesis,
   sms→MasterSystem, gg→GameGear, pce→PCEngine, ps1→PSX, n64→N64,
   nds→NDS, psp→PSP, arcade→NeoGeo`.
-  `arcade→NeoGeo` note: a `MAME` dir also exists (1 file) but the
-  device's FBNeo-class saves are NeoGeo titles; MAME stays unmapped
-  in 3.2a (single-dir-per-system mapper contract).
-  **Out-of-taxonomy inventory** (present on-device, NOT synced in
-  3.2a — taxonomy expansion is a separate owner decision, since SRAM
-  byte-portability is verified only for the founding systems):
-  Dreamcast, Saturn (a real YabaSanshiro `.srm` exists), SegaCD,
-  PCEngineCD, GC, PS2, N3DS, PSVita, 3do, adam; plus standalone-emu
-  content (`PSP/` PPSSPP dir, `Azahar` 3DS) — recon M7 territory.
+  **Provenance (owner-raised 2026-07-10):** these pairings were
+  derived by semantic NAME-MATCHING against the taxonomy vocabulary —
+  informed judgment, not device metadata — and the device dir names
+  themselves are one user's convention (carried from an earlier
+  handheld), NOT fixed per device. Owner-reviewed as good enough to
+  start; they are **Thor-validated defaults**, seeded per-device and
+  shown at enrollment (read-only review + unmapped-dirs list in
+  3.2a); the editable mapping surface + taxonomy alias seeding is
+  **issue #14**. `arcade→NeoGeo` exemplifies the judgment class: a
+  `MAME` dir also exists (1 file) but the device's FBNeo-class saves
+  are NeoGeo titles; MAME stays unmapped in 3.2a
+  (single-dir-per-system mapper contract; multi-dir is #14 territory).
+  **Out-of-taxonomy inventory — dispositioned (owner 2026-07-10):
+  BACK UP NOW, promote later (#15).** Present on-device: Dreamcast,
+  Saturn (a real YabaSanshiro `.srm` exists), SegaCD, PCEngineCD, GC,
+  PS2, N3DS, PSVita, 3do, adam. Their saves join the one-way
+  **backup archive** (byte-inventory 8) so nothing is lost while each
+  system awaits taxonomy expansion + per-system byte-portability
+  verification (issue #15 tracks promotion; SRAM portability is
+  verified only for the founding systems, and PS2/GC are
+  memory-card-shaped — maybe not SRAM at all). Standalone-emu content
+  (`PSP/` PPSSPP dir, `Azahar` 3DS) stays M7 inventory — different
+  track.
 - **Container census (completes R4's evidence):** 12 of 15 saves are
   RZIP, **3 are raw — and they are exactly the bsnes-family copies**
   (bsnes ×2, bsnes-hd beta ×1), which write raw even with
@@ -465,14 +497,21 @@ data. The findings below are already conclusive:
 - **Binding scale confirmed small:** 16 core dirs, 9 holding saves,
   ~22 save files total — the picker moment is minutes, not an
   onboarding wall.
-- **New cross-platform finding — multi-digit state slots:**
-  `Shining Force (USA).state10` exists on-device. The shared pattern
-  set (`pm_state_grep_re` / `pm_find_states`, matrix §6) matches only
-  single-digit `.state[0-9]` and silently skips `.state10+` on EVERY
-  platform (states are one-way archive, so the miss is invisible).
-  Core is out of 3.2a's lane: flagged for a one-line pattern-set fix
-  + tests as a separate owner-approved micro-change; the Kotlin port
-  and the conformance corpus pin whichever set core lands on.
+- **New cross-platform finding — multi-digit state slots (issue
+  #17):** `Shining Force (USA).state10` exists on-device, and the
+  owner reports auto-increment runs producing HUNDREDS of states with
+  slot numbers rolling past 900 into `.state1000+` (an SNES FF3 run).
+  The shared pattern set (`pm_state_grep_re` / `pm_find_states`,
+  matrix §6) matches only single-digit `.state[0-9]` and silently
+  skips every multi-digit slot on EVERY platform (states are one-way
+  archive, so the miss is invisible). Two halves, both in #17: the
+  one-line core pattern fix (out of 3.2a's lane), and a RETENTION
+  policy — hundreds of states per game with no count/total cap
+  balloons the repo. **3.2a position:** the Android state scanner
+  ships multi-digit patterns from day one (a DECLARED superset of the
+  shell set until core aligns — safe: the archive is one-way opaque
+  and a superset only archives more); retention is out of scope
+  pending the #17 policy decision (per-file 8 MB cap only).
 
 ### R3 resolution — native by-core support (Option A, DECIDED 2026-07-10)
 
@@ -531,8 +570,8 @@ by the inbound transcode (above).
 |---|------|------|
 | 1 | `src/platforms/android/thor_recon.sh` | On-device recon (already on branch — recon tooling, not product code). |
 | 2 | `src/platforms/android/{settings,build}.gradle.kts`, `gradle.properties`, `gradlew*`, `gradle/wrapper/*`, `.gitignore` | Gradle skeleton, pinned wrapper + dependency versions (Kotlin, JGit, JUnit, WorkManager, security-crypto). |
-| 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor required on opaque-dir layouts, sparse), `CoreBindings` (per-game binding store, device-local JSON: auto-bind, duplicate + cross-system ambiguity findings, late-bind cold-start rule), `ContainerSniff` (RZIP magic) + `RzipCodec` (inbound decode via `Inflater`, reference-oracle-validated, bomb cap, named-skip failure path; payload-compare helpers), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `StateArchive` (five shapes, size cap), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
-| 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste + ordered ROM-roots selection across volumes; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), duplicate/ambiguity resolution picker (one-time per game, drives `CoreBindings` — R3 resolution), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
+| 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor required on opaque-dir layouts, sparse), `CoreBindings` (per-game binding store, device-local JSON: auto-bind, duplicate + cross-system ambiguity findings, late-bind cold-start rule), `ContainerSniff` (RZIP magic) + `RzipCodec` (inbound decode via `Inflater`, reference-oracle-validated, bomb cap, named-skip failure path; payload-compare helpers), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `ArchiveSync` (states: the shell shapes EXTENDED to multi-digit slots — declared superset, #17 — plus the one-way `backup/` archive for unmappable-system saves, byte-inv. 8; size caps), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
+| 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste + ordered ROM-roots selection across volumes; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), duplicate/ambiguity resolution picker (one-time per game, drives `CoreBindings` — R3 resolution), system-mapping review at enrollment (read-only: detected dirs → canonical + the unmapped list feeding the backup archive; editable surface is #14), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
 | 5 | `config/platform_maps/retroarch_android.json` | → schema 2.0: `save_name_style: retroarch`, `save_container: raw` (what we WRITE; inbound is per-file sniff + transcode), `rom_roots: ["Roms"]`, `system_paths` = the recon-validated ROM-dir vocabulary pinned in §Recon findings R5/R6 (approved with this spec), `_notes` for the opaque-save-dirs model + mixed-container census. |
 | 6 | `tests/fixtures/conformance/` | Corpus: `cases/` + `expected/` + `generate_expected.sh` + `README.md`. |
 | 7 | `tests/unit/core/test_conformance_corpus.sh` | Shell side of the conformance suite (both privilege passes). |
@@ -575,15 +614,24 @@ Open-Item precedent), don't fix it in-lane.
    phase state-file lifecycle (sentinel/commit/clean-shutdown ordering,
    offline-deferred cold-start sentinel); ordered multi-root
    ROM-anchoring (first match wins; absent root → sparse skip, named
-   status); core-binding lifecycle (auto-bind single-location games;
-   multi-location duplicates and cross-system basename ambiguity →
-   named findings, nothing synced, never auto-picked; late-bind first
-   sync = per-file cold start with `.local` preserved; by-core,
-   by-content, and flat tree shapes all covered); JGit rc mapping incl. push
+   status); core-binding lifecycle (auto-bind single-location games
+   and identical-payload duplicates; divergent duplicates and
+   cross-system basename ambiguity → named findings, nothing synced,
+   never auto-picked; late-bind first sync = per-file cold start with
+   `.local` preserved; by-core, by-content, and flat tree shapes all
+   covered); backup-archive routing (unmappable-system save →
+   `backup/<device>/…/<file>.bak`, verbatim bytes, one-way, size cap;
+   never materialized); multi-digit state slots archived
+   (`.state10`, `.state1000`); JGit rc mapping incl. push
    retry/backoff and non-FF rejection; enrollment validation matrix;
    PAT never appears in any log line or exception message (masking
    test).
-3. **Interop:** `test_android_cross_device.sh` green — Brick-written
+3. **Interop (incl. fleet safety):** `test_android_cross_device.sh`
+   green, and the shell device in the harness boot-pulls a repo
+   already containing `backup/**.bak` entries CLEANLY (no phase
+   failure, commit stored, no materialization) — proving the `.bak`
+   suffix shields the deployed fleet from the new namespace (see
+   issue #16 for the underlying defect). Brick-written
    MinUI save lands via repo on the Kotlin device under retroarch
    naming with identical bytes (and reverse), `.rtc` travels, sparse
    honored both directions, no device-native names leak, cross-format
@@ -605,9 +653,11 @@ Open-Item precedent), don't fix it in-lane.
    in RetroArch — the transcode path proven on hardware end to end;
    the real multi-core duplicate set (ALttP (MSU1) under four core
    dirs) surfaces in the picker, the chosen copy syncs, and the
-   unchosen copies stay untouched on device; boot pull applies a
-   remote change; a WorkManager periodic cycle fires with the app
-   backgrounded; results in the field notes doc.
+   unchosen copies stay untouched on device; the real Saturn save
+   (out-of-taxonomy) lands verbatim under `backup/thor/…/…srm.bak` on
+   GitHub; boot pull applies a remote change; a WorkManager periodic
+   cycle fires with the app backgrounded; results in the field notes
+   doc.
 7. **Three-device round-trip (owner-run):** the
    `android-validation.md` protocol passes across Brick ⇆ Thor ⇆ Deck —
    canonical on-repo names, sha256 byte-match at each hop, sparse
@@ -679,6 +729,14 @@ Open-Item precedent), don't fix it in-lane.
 - SAF / Play Store compliance; any store distribution.
 - Save-state restore/cross-device state sync (project-wide gate).
 - Non-RetroArch emulators on Android (recon M7 inventories only).
+- Taxonomy expansion / promotion of backed-up systems to canonical
+  sync (issue #15) — 3.2a ships only the `backup/` floor.
+- The EDITABLE system-mapping surface + taxonomy alias seeding
+  (issue #14) — 3.2a ships the read-only review.
+- State-archive retention policy for auto-increment users (issue
+  #17) — 3.2a ships multi-digit coverage with the per-file cap only.
+- The core `boot_pull` unknown-path fix (issue #16) — the `.bak`
+  suffix makes 3.2a safe without it.
 - Migrating `migrate_repo.sh` or any repo-side tooling to Kotlin.
 - OTA/self-update for the APK (sideload zips this phase; revisit with
   3.2c).

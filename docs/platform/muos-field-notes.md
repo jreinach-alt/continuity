@@ -119,3 +119,27 @@ limit; env-tunable per device). Companion defect, same log: a skipped
 state re-candidates on every scan, so the warning repeated ~9×/30s
 poll forever — `cd_state_size_ok` now warns once per file per daemon
 run via a per-process ledger (subshell-safe).
+
+## RetroArch state shapes beyond the matrix (field, 2026-07-10)
+
+The NextUI format matrix's five state shapes were not the world:
+RetroArch on muOS also writes **multi-digit slots** (`.state10`,
+observed on the reference device) and **`.png` thumbnails** per slot.
+The old single-digit patterns made slot 10+ *invisible* — no warning
+possible for a file no list ever saw. Fixes, all in the core single
+source of truth (`pm_state_grep_re` — the tools/saves-repo digest
+classifier mirrors it BY HAND, update both):
+- Patterns now match multi-digit slots and thumbnails.
+- `pm_find_states` is structurally single-sourced (broad find piped
+  through the authoritative RE) so find/grep sets can never drift.
+- The scanner logs "Unrecognized file shape in states root" once per
+  run for anything the patterns don't match — the next unknown shape
+  self-documents instead of hiding (unmapped-button precedent).
+
+## muOS SIGTERMs the daemon at power-off (field, 2026-07-10)
+
+Unlike NextUI (which never signals the daemon — every Brick boot is a
+stale boot by design), muOS delivered a SIGTERM at power-off and the
+daemon's graceful path ran (`Shutdown: SIGTERM received` … final sweep
+… clean marker logic). Both shutdown paths are therefore live on this
+platform; keep both healthy.

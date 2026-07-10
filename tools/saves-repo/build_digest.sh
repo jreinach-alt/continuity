@@ -51,7 +51,7 @@ while IFS= read -r hash; do
         case "$f" in
             *.local|*.conflict)
                 printf '%s|%s\n' "$device" "$f" >> "$TMP/conflicts"; matched=1 ;;
-            states/*.st[0-9]|states/*.state|states/*.state[0-9]|states/*.state.[0-9]|states/*.state.auto)
+            states/*.st[0-9]|states/*.state|states/*.state[0-9]*|states/*.state.[0-9]|states/*.state.auto|states/*.state.png)
                 printf '%s|%s\n' "$device" "$f" >> "$TMP/states"; matched=1 ;;
             *.srm|*.sav|*.rtc)
                 printf '%s|%s\n' "$device" "$f" >> "$TMP/saves"; matched=1 ;;

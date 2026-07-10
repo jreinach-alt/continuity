@@ -101,6 +101,8 @@ printf 'sb' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state"
 printf 'sn' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state1"
 printf 'si' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state.0"
 printf 'sa' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state.auto"
+printf 'sx' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state10"
+printf 'sp' > "$REPO/states/SFC-snes9x/Super Metroid (USA).state10.png"
 git -C "$REPO" add -A
 commit_as "brick-a" "state backup"
 
@@ -136,6 +138,10 @@ assert_contains "state .state shape listed" "$OUT" \
     '- `states/SFC-snes9x/Super Metroid (USA).state`'
 assert_contains "state .state.auto shape listed" "$OUT" \
     '- `states/SFC-snes9x/Super Metroid (USA).state.auto`'
+assert_contains "multi-digit slot classified (muOS field defect)" "$OUT" \
+    '- `states/SFC-snes9x/Super Metroid (USA).state10`'
+assert_contains "state thumbnail classified" "$OUT" \
+    '- `states/SFC-snes9x/Super Metroid (USA).state10.png`'
 assert_contains "conflict section flagged" "$OUT" "## ⚠ Conflicts recorded"
 assert_contains ".local artifact listed" "$OUT" \
     '- `snes/Super Metroid (USA).srm.deck-b.local`'

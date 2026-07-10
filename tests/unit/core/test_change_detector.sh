@@ -188,12 +188,28 @@ done
 # silently never backed up before Sprint 2.0 — matrix §6)
 STATES="$CONTINUITY_STATES_ROOT"
 mkdir -p "$STATES/SFC-snes9x"
-for st in "Game.st0" "Game.state" "Game.state2" "Game.state.0" "Game.state.auto"; do
+for st in "Game.st0" "Game.state" "Game.state2" "Game.state.0" "Game.state.auto" \
+          "Game.state10" "Game.state10.png"; do
     printf 'state-bytes' > "$STATES/SFC-snes9x/$st"
 done
-output=$(cd_list_device_states)
+output=$(cd_list_device_states 2>/dev/null)
 state_count=$(printf '%s\n' "$output" | grep -c '.')
-assert_eq "cd_list_device_states finds all 5 shapes" "5" "$state_count"
+assert_eq "cd_list_device_states finds all 7 shapes (multi-digit + png)" "7" "$state_count"
+
+# unrecognized shapes self-document once per run (the .state10 lesson)
+export CONTINUITY_STATE_WARN_CACHE="$TEST_TMPDIR/unrec_ledger"
+printf 'x' > "$STATES/SFC-snes9x/weird.snapshot"
+w1=$(cd_list_device_states 2>&1 >/dev/null)
+w2=$(cd_list_device_states 2>&1 >/dev/null)
+case "$w1" in
+    *"Unrecognized file shape"*"weird.snapshot"*) passed=$((passed + 1)) ;;
+    *) printf 'FAIL: unrecognized shape must log, got [%s]\n' "$w1" >&2; failed=$((failed + 1)) ;;
+esac
+assert_eq "unrecognized-shape log is once per run" "" "$w2"
+out_clean=$(cd_list_device_states 2>/dev/null | grep -c "weird.snapshot") || true
+assert_eq "unrecognized shape never listed for archive" "0" "$out_clean"
+rm -f "$STATES/SFC-snes9x/weird.snapshot"
+unset CONTINUITY_STATE_WARN_CACHE
 
 # --- State size gate: 64 MB default, warn-once-per-run ledger ---
 

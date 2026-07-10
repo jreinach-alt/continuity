@@ -16,14 +16,32 @@
 # Exit codes: 78 (EX_CONFIG) = not enrolled / config missing — the unit
 # sets RestartPreventExitStatus=78 so systemd does not thrash on it.
 #
+# Change detection (Sprint 2.2): event-driven via one-shot inotifywait
+# with a timeout — inotify decides WHEN a cycle runs; the sentinel scan
+# in rp_run stays the single source of truth for WHAT changed, so a
+# missed event can only ever delay a sync (to the next housekeeping
+# wake or the shutdown final sweep), never lose one. Polling remains as
+# the named fallback wherever inotifywait is absent or failing.
+#
 # Test hooks (production values on the device):
-#   CONTINUITY_POLL_INTERVAL  — seconds between poll cycles
-#   CONTINUITY_APP_DIR        — checkout root (derived from $0 if unset)
-#   CONTINUITY_DAEMON_NO_MAIN — if set, source functions only
+#   CONTINUITY_POLL_INTERVAL       — poll-mode interval; event-mode
+#                                    timeout while work is pending
+#   CONTINUITY_DETECT_MODE         — auto|inotify|poll (default auto)
+#   CONTINUITY_EVENT_IDLE_INTERVAL — event-mode housekeeping timeout
+#                                    when idle + fully synced
+#   CONTINUITY_EVENT_SETTLE        — seconds to let an event burst
+#                                    settle before syncing
+#   CONTINUITY_INOTIFY_BIN         — watcher binary (stub / static)
+#   CONTINUITY_APP_DIR             — checkout root (from $0 if unset)
+#   CONTINUITY_DAEMON_NO_MAIN      — if set, source functions only
 set -e
 
 readonly CONTINUITY_VERSION="0.2.0-dev"
 readonly CONTINUITY_POLL_INTERVAL="${CONTINUITY_POLL_INTERVAL:-30}"
+readonly CONTINUITY_DETECT_MODE="${CONTINUITY_DETECT_MODE:-auto}"
+readonly CONTINUITY_EVENT_IDLE_INTERVAL="${CONTINUITY_EVENT_IDLE_INTERVAL:-300}"
+readonly CONTINUITY_EVENT_SETTLE="${CONTINUITY_EVENT_SETTLE:-2}"
+readonly CONTINUITY_INOTIFY_BIN="${CONTINUITY_INOTIFY_BIN:-inotifywait}"
 
 # ── Module Loading ───────────────────────────────────────────────────
 
@@ -76,12 +94,139 @@ rdd_boot_dispatch() {
     return "$rc"
 }
 
+# ── Change-Detection Wait (Sprint 2.2) ───────────────────────────────
+
+_RDD_WATCH_MODE="poll"
+_RDD_WATCH_FAILURES=0
+_RDD_WAIT_PID=""
+
+# rdd_detect_watch_mode — pick inotify vs poll once at startup and say
+# so (observability rule: every mode and every fallback names itself).
+rdd_detect_watch_mode() {
+    case "$CONTINUITY_DETECT_MODE" in
+        poll)
+            _RDD_WATCH_MODE="poll"
+            pal_log "info" "Change detection: polling (${CONTINUITY_POLL_INTERVAL}s interval, forced)"
+            ;;
+        inotify|auto)
+            if command -v "$CONTINUITY_INOTIFY_BIN" >/dev/null 2>&1; then
+                _RDD_WATCH_MODE="inotify"
+                pal_log "info" "Change detection: inotify (event-driven; idle housekeeping every ${CONTINUITY_EVENT_IDLE_INTERVAL}s)"
+            else
+                _RDD_WATCH_MODE="poll"
+                pal_log "warn" "inotifywait not found ($CONTINUITY_INOTIFY_BIN) — falling back to ${CONTINUITY_POLL_INTERVAL}s polling"
+            fi
+            ;;
+        *)
+            _RDD_WATCH_MODE="poll"
+            pal_log "warn" "Unknown CONTINUITY_DETECT_MODE '$CONTINUITY_DETECT_MODE' — using ${CONTINUITY_POLL_INTERVAL}s polling"
+            ;;
+    esac
+    return 0
+}
+
+# _rdd_wait_timeout — housekeeping timeout for the next wait. Pending
+# work (a deferred cold start, queued commits) keeps today's short
+# recovery cadence — which also keeps the reconcile cooldown's
+# cycle-counting at its designed ~5-minute wall-clock pace, since the
+# cooldown only counts while pushes are failing. An idle, fully-synced
+# Deck slows to the idle interval; events wake it instantly either way.
+_rdd_wait_timeout() {
+    if cs_is_cold_start "$CONTINUITY_REPO_DIR" || \
+       se_has_unpushed_commits "$CONTINUITY_REPO_DIR" 2>/dev/null; then
+        printf '%s' "$CONTINUITY_POLL_INTERVAL"
+    else
+        printf '%s' "$CONTINUITY_EVENT_IDLE_INTERVAL"
+    fi
+    return 0
+}
+
+# _rdd_sleep_interruptible <seconds> — backgrounded sleep + wait, so a
+# SIGTERM during the wait runs the trap immediately instead of stalling
+# `systemctl --user stop` for a full interval.
+_rdd_sleep_interruptible() {
+    sleep "$1" &
+    _RDD_WAIT_PID=$!
+    wait "$_RDD_WAIT_PID" 2>/dev/null || true
+    _RDD_WAIT_PID=""
+    return 0
+}
+
+# rdd_wait_for_change — block until a save/state changed (inotify event)
+# or the housekeeping timeout elapsed; either way the caller runs the
+# same idempotent poll cycle. One-shot inotifywait (not -m): no watcher
+# process to babysit, no event parsing, no queue-overflow loss mode, and
+# watches re-establish every cycle so new system dirs are covered. The
+# cost is a blind window while a cycle runs — bounded by the next
+# timeout wake, never a lost save (the sentinel scan is the detector).
+rdd_wait_for_change() {
+    if [ "$_RDD_WATCH_MODE" != "inotify" ]; then
+        _rdd_sleep_interruptible "$CONTINUITY_POLL_INTERVAL"
+        return 0
+    fi
+
+    local timeout rc
+    timeout=$(_rdd_wait_timeout)
+
+    # Backgrounded + wait: same SIGTERM story as the sleep. The states
+    # root rides along only when the PAL defines it and it exists.
+    # shellcheck disable=SC2153  # both roots are assigned by the sourced PAL
+    if [ -n "${CONTINUITY_STATES_ROOT:-}" ] && [ -d "$CONTINUITY_STATES_ROOT" ]; then
+        "$CONTINUITY_INOTIFY_BIN" -qq -r -t "$timeout" \
+            -e close_write -e moved_to -e create \
+            "$CONTINUITY_SAVES_ROOT" "$CONTINUITY_STATES_ROOT" 2>/dev/null &
+    else
+        "$CONTINUITY_INOTIFY_BIN" -qq -r -t "$timeout" \
+            -e close_write -e moved_to -e create \
+            "$CONTINUITY_SAVES_ROOT" 2>/dev/null &
+    fi
+    _RDD_WAIT_PID=$!
+    rc=0
+    wait "$_RDD_WAIT_PID" 2>/dev/null || rc=$?
+    _RDD_WAIT_PID=""
+
+    case "$rc" in
+        0)
+            # Event: let the burst settle (.srm + .rtc siblings,
+            # RetroArch's write-then-rename) so one wake = one commit.
+            _RDD_WATCH_FAILURES=0
+            if [ "$CONTINUITY_EVENT_SETTLE" -gt 0 ] 2>/dev/null; then
+                sleep "$CONTINUITY_EVENT_SETTLE"
+            fi
+            ;;
+        2)
+            # Timeout: the normal housekeeping wake.
+            _RDD_WATCH_FAILURES=0
+            ;;
+        *)
+            # Watch failure (watch limit, unmounted root, bad binary).
+            # Wait a full poll interval so a broken watcher never
+            # hot-spins, and flip to polling for good on strike three
+            # (recovery to inotify = daemon restart, deliberately).
+            _RDD_WATCH_FAILURES=$((_RDD_WATCH_FAILURES + 1))
+            pal_log "warn" "inotify wait failed (rc $rc, strike $_RDD_WATCH_FAILURES/3)"
+            if [ "$_RDD_WATCH_FAILURES" -ge 3 ]; then
+                _RDD_WATCH_MODE="poll"
+                pal_log "warn" "inotify failed 3x — switching to ${CONTINUITY_POLL_INTERVAL}s polling for this run"
+            fi
+            _rdd_sleep_interruptible "$CONTINUITY_POLL_INTERVAL"
+            ;;
+    esac
+    return 0
+}
+
 # ── Shutdown (systemctl --user stop → SIGTERM) ───────────────────────
 
 # Every step guarded: a trap handler under `set -e` must always reach
 # exit 0, or systemd counts the stop as a failure.
 rdd_shutdown() {
     pal_log "info" "Shutdown: SIGTERM received"
+
+    # Reap the backgrounded waiter (sleep or inotifywait) — systemd's
+    # cgroup kill would get it anyway; this keeps stop immediate + tidy.
+    if [ -n "${_RDD_WAIT_PID:-}" ]; then
+        kill "$_RDD_WAIT_PID" 2>/dev/null || true
+    fi
 
     # Final sweep — a save flushed after the last poll cycle must ride
     # the final push (or stale-boot pushes it next start if offline).
@@ -164,16 +309,15 @@ rdd_poll_once() {
 rdd_poll_loop() {
     trap rdd_shutdown TERM INT
 
-    pal_log "info" "Entering poll loop (${CONTINUITY_POLL_INTERVAL}s interval)"
+    if [ "$_RDD_WATCH_MODE" = "inotify" ]; then
+        pal_log "info" "Entering event loop"
+    else
+        pal_log "info" "Entering poll loop (${CONTINUITY_POLL_INTERVAL}s interval)"
+    fi
 
     while true; do
         rdd_poll_once
-
-        # Backgrounded sleep + wait: SIGTERM during the sleep interrupts
-        # `wait` immediately, so `systemctl --user stop` never blocks a
-        # full interval.
-        sleep "$CONTINUITY_POLL_INTERVAL" &
-        wait $!
+        rdd_wait_for_change
     done
 }
 
@@ -205,6 +349,8 @@ rdd_main() {
         { pal_log "error" "Failed to load platform map"; exit 78; }
 
     pal_log "info" "Bootstrap complete, enrolled as $CONTINUITY_DEVICE_NAME"
+
+    rdd_detect_watch_mode
 
     # Boot dispatch errors are non-fatal — an offline boot pull must
     # not stop the poll loop (recovery push handles the rest).

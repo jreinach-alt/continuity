@@ -107,7 +107,12 @@ cs_run() {
 
             local local_path rc_map
             rc_map=0
-            local_path=$(pm_repo_to_local "$repo_path" 2>/dev/null) || rc_map=$?
+            local_path=$(pm_canonical_to_device "$repo_path" 2>/dev/null) || rc_map=$?
+            if [ "$rc_map" -eq 2 ]; then
+                # No matching ROM on this device — sparse sync, not an error.
+                pal_log "info" "Cold start: no ROM for $repo_path — not materialized"
+                continue
+            fi
             if [ "$rc_map" -ne 0 ] || [ -z "$local_path" ]; then
                 pal_log "warn" "Cold start: unknown system in repo path: $repo_path"
                 continue
@@ -176,7 +181,11 @@ cs_run() {
 
             local repo_path rc_map
             rc_map=0
-            repo_path=$(pm_local_to_repo "$local_path" 2>/dev/null) || rc_map=$?
+            repo_path=$(pm_device_to_canonical "$local_path" 2>/dev/null) || rc_map=$?
+            if [ "$rc_map" -eq 3 ]; then
+                # Compressed save quarantined (mapper logged the named line).
+                continue
+            fi
             if [ "$rc_map" -ne 0 ] || [ -z "$repo_path" ]; then
                 pal_log "warn" "Cold start: unknown system dir for device path: $local_path"
                 continue

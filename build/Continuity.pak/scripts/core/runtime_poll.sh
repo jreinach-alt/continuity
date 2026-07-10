@@ -24,11 +24,11 @@ rp_find_candidates() {
     repo_dir="$1"
     sentinel="$repo_dir/.continuity/sentinel"
 
-    find "$CONTINUITY_SAVES_ROOT" \( -name "*.srm" -o -name "*.sav" \) -newer "$sentinel" 2>/dev/null || true
+    pm_find_saves "$CONTINUITY_SAVES_ROOT" -newer "$sentinel" || true
     # Save states (opaque one-way backup) — only when the PAL defines a
-    # root; the shared size gate applies here too.
+    # root; all five state name-shapes; the shared size gate applies here too.
     if [ -n "$CONTINUITY_STATES_ROOT" ] && [ -d "$CONTINUITY_STATES_ROOT" ]; then
-        find "$CONTINUITY_STATES_ROOT" -name "*.st[0-9]" -newer "$sentinel" 2>/dev/null | \
+        pm_find_states "$CONTINUITY_STATES_ROOT" -newer "$sentinel" | \
         while IFS= read -r f; do
             cd_state_size_ok "$f" || continue
             printf '%s\n' "$f"
@@ -37,14 +37,15 @@ rp_find_candidates() {
     return 0
 }
 
-# rp_map_device_path — repo path for a device file: save dirs map through
-# the platform map; states map to the opaque states/ namespace.
+# rp_map_device_path — repo path for a device file: save files map through
+# the canonical mapper (name-style + container sniff; rc 3 = compressed
+# save quarantined); states map to the opaque states/ namespace.
 rp_map_device_path() {
     local device_path
     device_path="$1"
     case "$device_path" in
         "${CONTINUITY_STATES_ROOT:-/nonexistent}"/*) pm_state_to_repo "$device_path" ;;
-        *)                           pm_local_to_repo "$device_path" ;;
+        *)                           pm_device_to_canonical "$device_path" ;;
     esac
 }
 

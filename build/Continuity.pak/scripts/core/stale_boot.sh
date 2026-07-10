@@ -149,7 +149,11 @@ sb_run() {
 
             local repo_path rc_map
             rc_map=0
-            repo_path=$(pm_local_to_repo "$device_path" 2>/dev/null) || rc_map=$?
+            repo_path=$(pm_device_to_canonical "$device_path" 2>/dev/null) || rc_map=$?
+            if [ "$rc_map" -eq 3 ]; then
+                # Compressed save quarantined (mapper logged the named line).
+                continue
+            fi
             if [ "$rc_map" -ne 0 ] || [ -z "$repo_path" ]; then
                 pal_log "warn" "Stale boot: unknown system dir, skipping: $device_path"
                 continue

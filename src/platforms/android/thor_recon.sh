@@ -69,20 +69,24 @@ section() { out ""; out "== $* =="; }
 # run_dev <command string> — run a shell command on the device.
 # adb mode: via `adb shell`; local mode: via the device's own sh.
 # Old adb/device combos emit \r\n — strip CRs defensively.
+# stdin is redirected from /dev/null: adb inherits and SLURPS the
+# caller's stdin, which silently empties any `while read` loop that
+# invokes it per line (field-found: the first Thor report's directory
+# censuses and container sniff were truncated to one entry each).
 run_dev() {
     if [ "$local_mode" = "1" ]; then
-        sh -c "$1" 2>/dev/null | tr -d '\r'
+        sh -c "$1" </dev/null 2>/dev/null | tr -d '\r'
     else
-        adb shell "$1" 2>/dev/null | tr -d '\r'
+        adb shell "$1" </dev/null 2>/dev/null | tr -d '\r'
     fi
 }
 
 # run_dev_raw <command string> — binary-safe device command (no CR strip).
 run_dev_raw() {
     if [ "$local_mode" = "1" ]; then
-        sh -c "$1" 2>/dev/null
+        sh -c "$1" </dev/null 2>/dev/null
     else
-        adb exec-out "$1" 2>/dev/null
+        adb exec-out "$1" </dev/null 2>/dev/null
     fi
 }
 

@@ -335,6 +335,101 @@ Implementation may start on owner approval of this spec; anything the
 report contradicts amends the spec first (small deltas noted in the
 summary, structural ones re-approved) — same protocol as 2.1.
 
+## Recon findings (Thor, 2026-07-10) — deltas for approval
+
+First owner-run report received (adb mode). Caveat: the report's
+directory censuses were truncated by a recon-script defect (adb
+consumed loop stdin; fixed on-branch) — a re-run completes the map
+data. The findings below are already conclusive:
+
+- **R1 ✓** AYN Thor (`kalama`), Android 13 / SDK 33, arm64-v8a;
+  RetroArch buildbot `com.retroarch.aarch64` 1.22.2_GIT (settles M5).
+- **R2 ✓** `savefile_directory` / `savestate_directory` =
+  `/storage/emulated/0/RetroArch/{saves,states}` — shared storage,
+  reachable; no relocation needed. `retroarch.cfg` itself is
+  app-private (adb's shell uid could read it on this build; the app
+  cannot) — confirming the spec's model of enrollment-time path
+  configuration + preflight validation, not live-cfg parsing.
+- **R4 ✗ — contingency C2 ACTIVE:** `save_file_compression = true`;
+  the sniffed save is RZIP. Under 2.1-parity quarantine, **zero saves
+  sync until the owner turns SaveRAM Compression OFF** (recon M1).
+  Existing compressed files then decompress organically as each game
+  is next saved in-game (rzipstream reads both containers
+  transparently and writes per the setting). `savestate_file_
+  compression = true` needs no action — states archive verbatim
+  (format-matrix §7).
+- **R3 — STRUCTURAL FINDING, decision required (below):** save
+  sorting is **by CORE NAME** (`sort_savefiles_enable = true`,
+  by-content `false`): the device layout is
+  `saves/<Core Name>/<Game>.srm` (`Snes9x/`, `mGBA/`, `bsnes-hd
+  beta/`, `Beetle PCE/`, …) — the directory component carries NO
+  system information — and the SAME game legitimately exists under
+  several core dirs (ALttP (MSU1) appears under Snes9x, bsnes,
+  bsnes-hd beta AND Mesen-S), making device→canonical a many-to-one
+  collapse. Neither the flat nor by-content shapes the original C3
+  contemplated.
+- **R5/R6 partial:** SD volume `388C-68F7` present. `Roms`/`ROMs`/
+  `roms` resolve to ONE case-insensitive directory per volume
+  (emulated storage + FAT); internal `ROMs` appears empty; the SD
+  tree carries content (`3do`, `N3DS` visible; full per-system census
+  pending the fixed re-run). ES-DE is present on both volumes — its
+  system-dir naming is the likely `system_paths` vocabulary. Inert
+  PowerShell scripts nested under `N3DS/7Z/` are clutter, not a
+  layout violation (3DS is not a synced system).
+- **New cross-platform finding — multi-digit state slots:**
+  `Shining Force (USA).state10` exists on-device. The shared pattern
+  set (`pm_state_grep_re` / `pm_find_states`, matrix §6) matches only
+  single-digit `.state[0-9]` and silently skips `.state10+` on EVERY
+  platform (states are one-way archive, so the miss is invisible).
+  Core is out of 3.2a's lane: flagged for a one-line pattern-set fix
+  + tests as a separate owner-approved micro-change; the Kotlin port
+  and the conformance corpus pin whichever set core lands on.
+
+### R3 decision — two ways to meet the by-core layout
+
+**Option A (recommended — adapt to the device, zero disruption):**
+support by-core natively.
+
+- Inbound identity: ROM-anchoring becomes REQUIRED (not fallback) on
+  this layout — a save's system is the system dir of the matching ROM
+  under the enrolled ROM roots; `system_paths` maps canonical names to
+  ROM-tree dir names (values from the re-run census).
+- **Per-game core binding** (new, device-local, never committed): sync
+  binds each canonical identity to the core dir that holds its save.
+  Auto-bound when exactly one core dir has the game (the common case);
+  multi-core duplicates become a NAMED enrollment/status finding the
+  user resolves once per game — pick which core's save syncs; the
+  unchosen files stay on device untouched, just unsynced. Never
+  auto-picked (wrong-merge corrupts a 40-hour file; duplicates cost
+  nothing — Decision-2 ethos).
+- Materialization writes through the binding. A repo save with no
+  binding **defers** until the game is first played on the Thor
+  (RetroArch creates the file, the binding auto-records), and that
+  first sync runs the per-file COLD-START semantic: repo wins on
+  device, the fresh local bytes are preserved as `.local`. This is the
+  conservative guard against a fresh play-through silently clobbering
+  the repo's long-running save — a hazard unique to late-materializing
+  layouts (shell platforms materialize before play, so the rule is
+  additive, not divergent; on-repo artifacts are unchanged).
+- Scope cost: binding store + duplicate picker + late-materialize rule
+  (+ tests). Conformance vs the shell reference is unaffected
+  (bindings are Android-local).
+
+**Option B (simpler build — reconfigure the Thor once):** owner flips
+RetroArch to sort-by-content (M2 off / M3 on) and moves the existing
+saves into system-named dirs once, resolving the multi-core duplicates
+by hand during the move (only the owner knows which core's save is
+canon). The device layout becomes `saves/<system>/` — the RetroDeck
+shape — and the spec builds exactly as originally written. Cost:
+one-time manual file surgery on a working setup, and RetroArch's save
+lookup changes for everything played thereafter.
+
+Either option still requires the R4 compression flip. If A is chosen,
+the affected sections are: file table #4 (binding store + duplicate
+picker in the app module), byte-inventory item 6 (late-materialize
+rule), AC2/AC6 (binding + duplicate cases), and C3 (flat layout stays
+a future contingency; by-core becomes supported behavior).
+
 ## In scope (file table)
 
 | # | File | What |

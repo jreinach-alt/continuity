@@ -428,9 +428,27 @@ approved 2026-07-09) — pending the on-device recon confirmation (spec
 
 New PAL implementation + enrollment trigger. Nearly identical to NextUI. Different save paths, different boot hook mechanism. Same core engine. No core code changes.
 
-### Sprint 3.2 — Android Client (outline)
+### Sprint 3.2 — Android Client (mini-phase 3.2a/b/c)
 
-Java/Kotlin app implementing the PAL interface natively. JGit for git operations. `FileObserver` for change detection. Material UI for status and conflict resolution. The conflict UI is the **native reimplementation** of the Conflict-Resolution Experience design (`docs/design/conflict-resolution-experience.md`): same on-repo `.conflict`/`.local`/trying artifacts and the same §4 resolution guards, in Kotlin rather than the shared shell controller. (Owner's Ayn Thor is the available validation device.)
+Native Kotlin app (NOT a shell port), architecture approved 2026-07-09:
+`docs/design/android-client-architecture.md` — `MANAGE_EXTERNAL_STORAGE`
+storage, lifecycle-triggered + WorkManager background (FileObserver
+demoted to an inside-the-service option), JGit, and a MANDATORY
+cross-language conformance suite (byte-identical on-repo artifacts vs
+the shell reference). Validation device: the owner's Ayn Thor.
+
+- **3.2a — sync core + enrollment (parity with RetroDeck 2.1):**
+  **Spec drafted 2026-07-10 — awaiting owner approval + Thor recon**
+  (`docs/sprints/sprint-3.2a-spec.md`; recon:
+  `src/platforms/android/thor_recon.sh`, branch
+  `claude/sprint-3-2a-android-sync-zcvvr5`). Canonicalization + sync
+  phases + conflict preservation in Kotlin, JGit, Keystore PAT,
+  enrollment, `retroarch_android.json` → v2, conformance suite + gate
+  integration, headless Brick⇆Kotlin interop test.
+- **3.2b — conflict UI:** native Material reimplementation of the
+  Conflict-Resolution Experience design (same on-repo
+  `.conflict`/`.local`/trying artifacts, same §4 guards).
+- **3.2c — polish:** status UI, notifications, log, WorkManager tuning.
 
 ---
 

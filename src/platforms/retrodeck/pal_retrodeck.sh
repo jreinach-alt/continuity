@@ -101,3 +101,67 @@ pal_log() {
 pal_get_platform_map() {
     printf '%s\n' "$CONTINUITY_APP_DIR/config/platform_maps/retrodeck.json"
 }
+
+# ── Notifications (Sprint 2.2) ───────────────────────────────────────
+# pal_on_sync_result — desktop notifications via notify-send (D-Bus,
+# org.freedesktop.Notifications — reachable from a systemd --user
+# service without DISPLAY). Level mapping per the pal.md behavior
+# contract + ui-design-system §3 status words: green/yellow are
+# transient with the contract's expiries; red is critical (Plasma keeps
+# it on screen until dismissed).
+#
+# Core re-fires red on every cycle while the condition persists, so the
+# Deck debounces: an identical red already SENT this daemon run is
+# suppressed; a changed message, a restart, or any intervening green
+# clears the suppression, and a FAILED send is never recorded (Game
+# Mode runs no notification daemon — the red lands on the next desktop
+# session's re-fire). The message is displayed verbatim, never parsed
+# (contract), and every path returns 0 — the daemon runs under set -e
+# and a notification must never take sync down.
+
+CONTINUITY_NOTIFY_BIN="${CONTINUITY_NOTIFY_BIN:-notify-send}"
+# Per-run debounce state: runtime dir (cleared at logout), per-uid +
+# per-pid so daemon runs never collide with each other or other users.
+CONTINUITY_NOTIFY_STATE="${CONTINUITY_NOTIFY_STATE:-${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/continuity_last_red.$(id -u 2>/dev/null || printf '0').$$}"
+
+pal_on_sync_result() {
+    local level message
+    level="$1"
+    message="$2"
+
+    if ! command -v "$CONTINUITY_NOTIFY_BIN" >/dev/null 2>&1; then
+        pal_log "info" "notify [$level]: $message (notify-send unavailable)"
+        return 0
+    fi
+
+    case "$level" in
+        green)
+            "$CONTINUITY_NOTIFY_BIN" -a Continuity -t 3000 \
+                "Continuity — Synced" "$message" 2>/dev/null || true
+            # A good sync clears red suppression: if the red condition
+            # comes back later, the user hears about it again.
+            rm -f "$CONTINUITY_NOTIFY_STATE" 2>/dev/null || true
+            ;;
+        yellow)
+            "$CONTINUITY_NOTIFY_BIN" -a Continuity -t 4000 \
+                "Continuity — Queued" "$message" 2>/dev/null || true
+            ;;
+        red)
+            if [ -f "$CONTINUITY_NOTIFY_STATE" ] && \
+               [ "$(cat "$CONTINUITY_NOTIFY_STATE" 2>/dev/null)" = "$message" ]; then
+                return 0
+            fi
+            if "$CONTINUITY_NOTIFY_BIN" -a Continuity -u critical \
+                "Continuity — needs you" \
+                "$message
+If this is a save conflict: open 'Continuity — Resolve save conflicts' (or run resolve_conflicts.sh)." \
+                2>/dev/null; then
+                printf '%s' "$message" > "$CONTINUITY_NOTIFY_STATE" 2>/dev/null || true
+            fi
+            ;;
+        *)
+            pal_log "warn" "notify: unknown level '$level' — $message"
+            ;;
+    esac
+    return 0
+}

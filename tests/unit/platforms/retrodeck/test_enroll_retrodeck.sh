@@ -158,6 +158,13 @@ sysctl_calls=$(cat "$SYSCTL_LOG" 2>/dev/null)
 assert_contains "daemon-reload called" "$sysctl_calls" "--user daemon-reload"
 assert_contains "enable --now called" "$sysctl_calls" "--user enable --now continuity.service"
 
+# resolver launcher installed with the real checkout path substituted
+launcher="$H1/.local/share/applications/continuity-resolve.desktop"
+assert_file_exists "launcher installed" "$launcher"
+launcher_text=$(cat "$launcher" 2>/dev/null)
+assert_contains "launcher Exec templated" "$launcher_text" "$PROJECT_ROOT/src/platforms/retrodeck/resolve_conflicts.sh"
+assert_not_contains "launcher: no placeholder left" "$launcher_text" "@APP_DIR@"
+
 # PAT hygiene: never in output, never left in the repo tree's git config
 assert_not_contains "PAT not in output" "$out" "test-pat-secret"
 assert_not_contains "PAT not in remote tree" "$remote_files" "credentials"
@@ -181,6 +188,9 @@ else
     printf 'FAIL: --no-service still installed unit\n' >&2; failed=$((failed + 1))
 fi
 assert_eq "--no-service: systemctl never called" "" "$(cat "$SYSCTL_LOG" 2>/dev/null)"
+# The launcher is UI, not the daemon — installed even with --no-service.
+assert_file_exists "--no-service: launcher still installed" \
+    "$H2/.local/share/applications/continuity-resolve.desktop"
 
 # --- 4. Validation failures ---
 H3="$TEST_TMPDIR/home3"

@@ -71,9 +71,12 @@ APP="$OUT/.continuity/app"
 
 assert_file_exists "task entry" "$OUT/MUOS/task/Continuity.sh"
 assert_file_exists "recon task entry" "$OUT/MUOS/task/Continuity Recon.sh"
+assert_file_exists "update task entry (Sprint 3.2)" "$OUT/MUOS/task/Continuity Update.sh"
+assert_executable "update task +x" "$OUT/MUOS/task/Continuity Update.sh"
 assert_file_exists "boot hook" "$OUT/MUOS/init/continuity.sh"
 assert_executable "boot hook +x" "$OUT/MUOS/init/continuity.sh"
 assert_file_exists "daemon" "$APP/scripts/continuity_daemon.sh"
+assert_file_exists "ota updater staged (Sprint 3.2)" "$APP/scripts/update.sh"
 assert_file_exists "pal" "$APP/scripts/pal_muos.sh"
 assert_file_exists "enroll" "$APP/scripts/enroll_sd_card.sh"
 assert_file_exists "preflight" "$APP/scripts/preflight.sh"
@@ -96,6 +99,11 @@ case "$version" in
     0.1.0-muos-*) passed=$((passed + 1)) ;;
     *) printf 'FAIL: version stamp shape, got [%s]\n' "$version" >&2; failed=$((failed + 1)) ;;
 esac
+
+# OTA channel seed: default nightly, written into the app dir where
+# update.sh's ota_channel() seeds the device's durable channel from.
+assert_file_exists "ota channel seed" "$APP/ota_channel.txt"
+assert_eq "ota channel seed defaults to nightly" "nightly" "$(cat "$APP/ota_channel.txt")"
 
 # every manifest line verifies (same check preflight runs on-device)
 manifest_bad=0
@@ -135,6 +143,18 @@ MUOS_APP_SRC_PAK="$PAK" MUOS_APP_OUT_DIR="$TEST_TMPDIR/out2" \
 assert_eq "missing git binary fails the build" "1" "$rc"
 grep -q "missing from" "$TEST_TMPDIR/build2.log" && passed=$((passed + 1)) || {
     printf 'FAIL: missing-binary error not named\n' >&2; failed=$((failed + 1)); }
+
+# ── Channel seed override ────────────────────────────────────────────
+
+printf 'GITBIN-BYTES' > "$PAK/bin/git"   # restore the binary removed above
+OUT3="$TEST_TMPDIR/out3"
+rc=0
+CONTINUITY_BUILD_CHANNEL=stable MUOS_APP_SRC_PAK="$PAK" \
+    MUOS_APP_OUT_DIR="$OUT3" MUOS_APP_ZIP_DIR="$ZIPD" \
+    sh "$PROJECT_ROOT/scripts/build_muos_app.sh" > "$TEST_TMPDIR/build3.log" 2>&1 || rc=$?
+assert_eq "channel-override build succeeds" "0" "$rc"
+assert_eq "CONTINUITY_BUILD_CHANNEL seeds ota_channel.txt" \
+    "stable" "$(cat "$OUT3/.continuity/app/ota_channel.txt")"
 
 printf '\ntest_build_muos_app: %d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

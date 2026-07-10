@@ -45,6 +45,27 @@ instruct-don't-reconfigure pattern (like the RZIP "set save format to
 uncompressed" line): enrollment preflight detects it and names the fix
 on-screen; we never rewrite RetroArch's config ourselves. The recon
 (R2) determines whether the owner's Thor already has reachable paths.
+All Files Access spans **every shared-storage volume, including
+removable SD cards** (`/storage/<VOLUME-ID>/…`) — only
+`Android/data`/`Android/obb` are excluded, on every volume — so
+SD-resident ROMs and saves are fully in scope.
+
+**ROM roots are multi-volume (owner-confirmed 2026-07-10: the Thor's
+ROMs live on its SD card).** The app treats ROM roots as an ORDERED
+LIST of absolute directories (internal and/or SD volumes), chosen at
+enrollment and validated by preflight; each root is laid out
+`<root>/<system_dir>/`. ROM-anchoring searches the roots in order,
+first match wins — per-root lookup semantics identical to the shell
+reference's single `CONTINUITY_ROMS_ROOT` (the conformance corpus pins
+single-root behavior, which the shell can express; the ordered-union
+across roots is Android-only surface and is unit-tested Kotlin-side).
+The v2 map's `rom_roots` field stays informational, like retrodeck's —
+the authoritative roots are the enrolled absolute paths (the rdhome
+relocatability precedent). An absent root (card ejected, reformatted →
+new volume ID) is a NAMED preflight/status finding and degrades safely
+at sync time: device→repo sync continues unaffected; repo→device
+materialization sparse-skips (no visible ROM → nothing materialized —
+never a wrong write).
 
 **Background (architecture §4b, Decision 2 — lifecycle + WorkManager):**
 no persistent daemon. The shell daemon's lifecycle maps onto Android as:
@@ -273,7 +294,10 @@ same conditional style as the existing qemu checks:
 `src/platforms/android/thor_recon.sh` is on the branch (read-only; adb
 from a PC, or `CONTINUITY_RECON_LOCAL=1` in Termux on the device; a
 manual RetroArch-UI checklist covers anything scoped storage hides from
-adb):
+adb). Step-by-step USB-debugging enablement for the Thor is in the
+script's header comment. SD volumes are probed automatically;
+`CONTINUITY_ROM_ROOTS=/abs/path1:/abs/path2` force-probes unusual
+locations:
 
 ```sh
 sh src/platforms/android/thor_recon.sh
@@ -299,9 +323,13 @@ Items the report must confirm:
   1A); owner turns `SaveRAM Compression` off (M1).
 - **R5** — ROM root(s) + flat `roms/<system>/` layout; the real system
   dir names for `system_paths` and `rom_roots`.
-- **R6** — where saves/ROMs physically live (internal vs SD volume
-  `/storage/XXXX-XXXX`) — pins the paths enrollment preflight validates
-  and whether the map needs an SD-volume note.
+- **R6** — which volumes hold saves and ROMs: internal
+  (`/storage/emulated/0`) vs SD (`/storage/<VOLUME-ID>`), the SD
+  volume ID, and the exact ROM root path(s) per volume. ROMs are
+  expected on the SD card (owner-stated); the report's SD-volume
+  section pins the ordered ROM-roots list enrollment will validate and
+  confirms the SD roots follow the flat `<root>/<system>/` layout (R5
+  applies per root).
 
 Implementation may start on owner approval of this spec; anything the
 report contradicts amends the spec first (small deltas noted in the
@@ -314,7 +342,7 @@ summary, structural ones re-approved) — same protocol as 2.1.
 | 1 | `src/platforms/android/thor_recon.sh` | On-device recon (already on branch — recon tooling, not product code). |
 | 2 | `src/platforms/android/{settings,build}.gradle.kts`, `gradle.properties`, `gradlew*`, `gradle/wrapper/*`, `.gitignore` | Gradle skeleton, pinned wrapper + dependency versions (Kotlin, JGit, JUnit, WorkManager, security-crypto). |
 | 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor, sparse), `ContainerSniff` (RZIP magic, quarantine class), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `StateArchive` (five shapes, size cap), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
-| 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
+| 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste + ordered ROM-roots selection across volumes; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
 | 5 | `config/platform_maps/retroarch_android.json` | → schema 2.0: `save_name_style: retroarch`, `save_container: raw`, `rom_roots`, `system_paths` — every value recon-validated (R3/R5), informational `_notes` for the storage constraint. |
 | 6 | `tests/fixtures/conformance/` | Corpus: `cases/` + `expected/` + `generate_expected.sh` + `README.md`. |
 | 7 | `tests/unit/core/test_conformance_corpus.sh` | Shell side of the conformance suite (both privilege passes). |
@@ -348,7 +376,9 @@ Open-Item precedent), don't fix it in-lane.
    (device→canonical→device per style); quarantine rc-3 semantics with
    the named log line; ROM-anchor beats heuristic; sparse skip rc-2;
    phase state-file lifecycle (sentinel/commit/clean-shutdown ordering,
-   offline-deferred cold-start sentinel); JGit rc mapping incl. push
+   offline-deferred cold-start sentinel); ordered multi-root
+   ROM-anchoring (first match wins; absent root → sparse skip, named
+   status); JGit rc mapping incl. push
    retry/backoff and non-FF rejection; enrollment validation matrix;
    PAT never appears in any log line or exception message (masking
    test).
@@ -365,11 +395,12 @@ Open-Item precedent), don't fix it in-lane.
    with zero diffs outside this sprint's file table.
 6. **On-Thor (owner-run, after merge-ready):** All-Files-Access flow +
    preflight names any unreachable path; enrollment from the app
-   (device registered on GitHub); cold start materializes existing repo
-   saves for owned ROMs; play → save → canonical name appears on
-   GitHub; boot pull applies a remote change; a WorkManager periodic
-   cycle fires with the app backgrounded; results in the field notes
-   doc.
+   (device registered on GitHub) with the ROM roots pointed at the
+   Thor's SD card; cold start materializes existing repo saves for
+   owned ROMs — ROM-anchored against the SD-resident ROM tree; play →
+   save → canonical name appears on GitHub; boot pull applies a remote
+   change; a WorkManager periodic cycle fires with the app
+   backgrounded; results in the field notes doc.
 7. **Three-device round-trip (owner-run):** the
    `android-validation.md` protocol passes across Brick ⇆ Thor ⇆ Deck —
    canonical on-repo names, sha256 byte-match at each hop, sparse
@@ -413,6 +444,12 @@ Open-Item precedent), don't fix it in-lane.
   handling): the engine wraps all transport in one class; any
   incompatibility is contained there and fixed against a live-GitHub
   smoke test (the enrollment AC covers it on real hardware).
+- **C6 — SD volume changes** (card swapped or reformatted →
+  `/storage/<VOLUME-ID>` changes): preflight/status names the missing
+  ROM root; the fix is re-pointing the roots in app settings — no
+  re-enrollment, no repo impact. While the card is absent,
+  materialization sparse-skips and device→repo sync is unaffected
+  (saves live on reachable storage per R2; only ROM lookups pause).
 
 ## Out of scope (deferred)
 

@@ -9,6 +9,26 @@
 #   sh thor_recon.sh
 # then send CONTINUITY_THOR_RECON.txt back for spec confirmation.
 #
+# Enabling USB debugging on the Thor (stock Android flow; menu names
+# can vary slightly by firmware):
+#   1. Settings -> About device (or About phone) -> tap "Build number"
+#      7 times, until "You are now a developer!" appears.
+#   2. Settings -> System -> Developer options -> enable "USB debugging".
+#   3. Connect a USB-C DATA cable to the PC; on the Thor accept the
+#      "Allow USB debugging?" prompt (tick "Always allow from this
+#      computer").
+#   4. Verify on the PC: `adb devices` lists the Thor as "device".
+#      - listed as "unauthorized": the on-screen prompt is still
+#        waiting (or: Developer options -> Revoke USB debugging
+#        authorizations, then replug and re-accept).
+#      - not listed at all: try another cable/port, set the device's
+#        USB mode to "File transfer/MTP"; Windows may need the Google
+#        USB driver.
+#
+# ROM roots on the SD card are probed automatically (every /storage
+# volume). Unusual locations can be force-probed with
+#   CONTINUITY_ROM_ROOTS=/abs/path1:/abs/path2 sh thor_recon.sh
+#
 # Alternative (no PC): run directly on the device in Termux with
 #   CONTINUITY_RECON_LOCAL=1 sh thor_recon.sh
 # (local mode runs the same probes through the device shell; Termux can
@@ -280,29 +300,67 @@ if [ -n "$states_root" ] && [ "$(dev_test_dir "$states_root")" = "yes" ]; then
 fi
 
 # --- ROMs -------------------------------------------------------------
-section "ROM roots (probing common locations)"
-for cand in "/storage/emulated/0/Roms" "/storage/emulated/0/ROMs" \
-            "/storage/emulated/0/roms" "/storage/emulated/0/Games" \
-            "/storage/emulated/0/RetroArch/roms"; do
-    st=$(dev_test_dir "$cand")
-    [ "$st" = "no" ] && continue
-    out "$cand: $st"
-    if [ "$st" = "yes" ]; then
-        run_dev "ls -p \"$cand\"" | grep '/$' | head -20 | while IFS= read -r d; do
-            [ -z "$d" ] && continue
-            n=$(run_dev "find \"$cand/${d%/}\" -maxdepth 1 -type f 2>/dev/null" | grep -c . || true)
-            out "  ${d%/}: ${n:-0} files"
-        done
-        out "  -- nested ROM dirs (files deeper than roms/<system>/) --"
-        nested=$(run_dev "find \"$cand\" -mindepth 3 -type f 2>/dev/null" | head -3)
-        if [ -n "$nested" ]; then
-            printf '%s\n' "$nested" | while IFS= read -r nf; do out "  $nf"; done
-        else
-            out "  none found (flat layout — good)"
-        fi
+# Probes internal storage AND every non-emulated /storage volume (SD
+# cards) for common ROM-root names, and lists each SD volume's top-level
+# dirs so an unusually-named root still shows up in the report. Extra
+# roots: CONTINUITY_ROM_ROOTS=/abs/path1:/abs/path2 (colon-separated).
+
+# probe_rom_root <abs-dir> — report a ROM root: per-system file counts
+# plus the nested-layout check. Silent when the dir does not exist.
+probe_rom_root() {
+    _cand="$1"
+    _st=$(dev_test_dir "$_cand")
+    [ "$_st" = "no" ] && return 0
+    out "$_cand: $_st"
+    [ "$_st" = "yes" ] || return 0
+    run_dev "ls -p \"$_cand\"" | grep '/$' | head -25 | while IFS= read -r d; do
+        [ -z "$d" ] && continue
+        n=$(run_dev "find \"$_cand/${d%/}\" -maxdepth 1 -type f 2>/dev/null" | grep -c . || true)
+        out "  ${d%/}: ${n:-0} files"
+    done
+    out "  -- nested ROM dirs (files deeper than <root>/<system>/) --"
+    nested=$(run_dev "find \"$_cand\" -mindepth 3 -type f 2>/dev/null" | head -3)
+    if [ -n "$nested" ]; then
+        printf '%s\n' "$nested" | while IFS= read -r nf; do out "  $nf"; done
+    else
+        out "  none found (flat layout — good)"
     fi
-done
-out "(SD-card ROM roots: re-run with the paths from the Storage volumes section if ROMs live on the SD card, e.g. /storage/XXXX-XXXX/Roms)"
+}
+
+# probe_rom_names <volume-root> — try the common ROM-root names there.
+probe_rom_names() {
+    for _name in Roms ROMs roms Games RetroArch/roms; do
+        probe_rom_root "$1/$_name"
+    done
+}
+
+section "ROM roots (internal + SD volumes)"
+if [ -n "${CONTINUITY_ROM_ROOTS:-}" ]; then
+    out "-- owner-specified roots (CONTINUITY_ROM_ROOTS) --"
+    printf '%s\n' "$CONTINUITY_ROM_ROOTS" | tr ':' '\n' | while IFS= read -r r; do
+        [ -n "$r" ] && probe_rom_root "$r"
+    done
+fi
+
+out "-- internal storage (/storage/emulated/0) --"
+probe_rom_names "/storage/emulated/0"
+
+vols=$(run_dev 'ls /storage' | grep -v '^emulated$' | grep -v '^self$' || true)
+if [ -n "$vols" ]; then
+    printf '%s\n' "$vols" | while IFS= read -r v; do
+        [ -z "$v" ] && continue
+        out "-- SD/removable volume /storage/$v --"
+        out "  top-level dirs:"
+        run_dev "ls -p \"/storage/$v\"" | grep '/$' | head -25 | while IFS= read -r d; do
+            [ -z "$d" ] && continue
+            out "    ${d%/}"
+        done
+        probe_rom_names "/storage/$v"
+    done
+else
+    out "-- no SD/removable volume detected under /storage --"
+fi
+out "(if the real ROM root is none of the probed names, re-run with CONTINUITY_ROM_ROOTS=/abs/path — the volume listings above show the candidates)"
 
 # --- Network (sanity only) -------------------------------------------
 section "Network"

@@ -1,7 +1,9 @@
 # Android Client Architecture — Sprint 3.2 Scoping
 
-**Status:** Draft for approval — 2026-07-09. Design gate for the Android
-platform sprint(s). Android is a **native Kotlin reimplementation** of the
+**Status:** Approved 2026-07-09 (all five §8 decisions accepted as
+recommended: `MANAGE_EXTERNAL_STORAGE` storage; lifecycle-triggered +
+WorkManager background; JGit; a mandatory cross-language conformance suite;
+the 3.2a/b/c breakdown). Design gate for the Android platform sprint(s). Android is a **native Kotlin reimplementation** of the
 already-settled contracts, not a shell port — so this doc's job is to pin
 what it must conform to, name the two genuinely Android-specific hard
 problems, and propose a sprint breakdown. Validation device: the owner's
@@ -135,7 +137,7 @@ Android is too big for one sprint. Proposed:
 
 Each is spec-gated and owner-merged, same methodology as the shell sprints.
 
-## 8. Open decisions (for approval)
+## 8. Decisions (accepted 2026-07-09, as recommended)
 
 1. **Storage model (§4a):** `MANAGE_EXTERNAL_STORAGE` (direct, sideload) vs
    SAF (Play-compliant, URI). Recommend **MANAGE_EXTERNAL_STORAGE** — it's a

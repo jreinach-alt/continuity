@@ -117,26 +117,47 @@ when the PAK shipped.
   mechanism (`MUOS/init/*.sh`, toggle in Advanced Settings) — hook +
   test shipped, packaged as `MUOS/init/continuity.sh`.
 
+## Hardware validation — final state (2026-07-10)
+
+ALL daemon lifecycle paths hardware-proven on the RG40XX V: boot hook
+via muOS "User Init Scripts" (off by default — one-time toggle; the
+`$0`-derivation bind-mount trap fixed en route), cold start, stale
+catch-up, runtime poll (FFMQ round-trip), WiFi-recovery push, and
+graceful SIGTERM shutdown at power-off (muOS signals the daemon —
+NextUI never does). GB/GBC split through the shared Gambatte dir
+verified against real files (I3). 64 MB state cap verified (all nine
+formerly-skipped N64/Dreamcast states landed). Multi-digit state
+slots + thumbnails fixed after the field caught the single-digit
+pattern gap.
+
+**Cross-device (I6):** first Brick↔RG test exposed the Sprint 2.0
+deployment gap — the committed PAK was still the Phase-1 passthrough
+build, so canonical saves from the RG landed under names NextUI never
+reads, and the repo briefly held dual identities per game. Resolution:
+PAK rebuilt from the current tree (canonical mapper + v2 map +
+state-shape fixes; binaries unchanged); owner confirmed the Brick's
+long-form `Name (TAG)` ROM folders (the 2.0 hardware gate) and
+migrated the live saves repo (ALttP renamed canonical; the Brick's
+empty FFMQ save dropped in favor of the RG's real one). Final
+on-device confirmation rides the main merge + channel publish (Brick
+updates via OTA — no card trip).
+
 ## Open Items
 
-1. **Owner: enable the boot hook** (Configuration → General Settings →
-   Advanced Settings → User Init Scripts) after installing the build
-   that ships `MUOS/init/continuity.sh`; reboot; confirm via the
-   Continuity task that the daemon is already running.
-2. **Owner: verify repo layout on GitHub** (I3 field check): gb/ and
-   gbc/ split correctly out of the shared Gambatte dir; N64 names with
-   `[!]` intact; the Mystic Quest save present under snes/.
-3. **Remaining I5 checks**: runtime-poll push while playing (save →
-   quit game → ~30s → commit); repo→device materialization (boot
-   pull); reboot/crash-recovery cycles.
-4. **Cross-device test with the Brick** (I6), then PR to main
-   (owner merges).
-5. Unproven cores (nes, genesis, sms, gg, pce, arcade …) get map
+1. **Owner: merge the PR to main**, then publish the channel pin
+   (`scripts/publish_channel.sh`) — one pin serves the PAK and the
+   muOS app (Sprint 3.2).
+2. **Post-publish confirmation**: Brick OTA-updates → FFMQ appears
+   in-game on the Brick; ALttP appears on the RG; then one deliberate
+   two-device conflict to watch both versions preserved (the last I6
+   checkbox).
+3. Unproven cores (nes, genesis, sms, gg, pce, arcade …) get map
    entries as the daemon's unknown-dir warnings surface them — never
-   from memory.
-6. Refactor candidate for a future sprint (architecture signal, not
+   from memory. Same for the Brick's dual-tag systems (SFC/SUPA,
+   GBA/MGBA).
+4. Refactor candidate for a future sprint (architecture signal, not
    3.1): daemon + enroll_sd_card are near-identical copies in two
    platform dirs — CLAUDE.md's "two platforms need it → core" rule
    points at extracting a shared daemon skeleton.
-7. Roadmap: Onion OS deferred as Sprint 3.3 (needs Miyoo-family
+5. Roadmap: Onion OS deferred as Sprint 3.3 (needs Miyoo-family
    hardware; new ARMv7 cross-compile target).

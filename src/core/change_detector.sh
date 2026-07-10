@@ -62,16 +62,28 @@ cd_list_device_saves() {
 # backed up before Sprint 2.0.
 # Prints absolute paths, one per line. Empty when CONTINUITY_STATES_ROOT
 # is unset (platform without state backup) or the dir is absent.
-# Oversized states (>CONTINUITY_STATE_MAX_KB, default 8192) are skipped
-# with a log line — some cores write 100MB+ snapshots that don't belong
-# in a save repo.
-# cd_state_size_ok — shared size gate for state files (default 8 MB;
-# some cores write 100MB+ snapshots that don't belong in a save repo).
+# Oversized states (>CONTINUITY_STATE_MAX_KB, default 65536 = 64 MB)
+# are skipped with a log line — the gate exists so a pathological
+# snapshot can't bloat the save repo. 64 MB clears every fleet core
+# today (snes9x ~800 KB, mGBA ~400 KB, Mupen64 ~16-25 MB, Flycast
+# ~30 MB) while staying under GitHub's 100 MB hard limit; owner-raised
+# from 8 MB (2026-07-09) when the RG40XX V's N64/Dreamcast states all
+# hit the old default.
+# cd_state_size_ok — shared size gate for state files.
+# A skipped state never reaches the repo, so it re-candidates on EVERY
+# scan — warn once per file per daemon run (field defect on the
+# RG40XX V: 9 identical warnings per 30s poll, unbounded log). The
+# warned-ledger is a per-process temp file because scans run in
+# pipeline subshells where shell variables don't persist.
 cd_state_size_ok() {
-    local max_kb
-    max_kb="${CONTINUITY_STATE_MAX_KB:-8192}"
+    local max_kb ledger
+    max_kb="${CONTINUITY_STATE_MAX_KB:-65536}"
     if [ "$(cat "$1" 2>/dev/null | wc -c)" -gt $((max_kb * 1024)) ]; then
-        pal_log "warn" "State too large, skipping: $1"
+        ledger="${CONTINUITY_STATE_WARN_CACHE:-${TMPDIR:-/tmp}/continuity_state_warned.$$}"
+        if ! grep -qxF -e "$1" "$ledger" 2>/dev/null; then
+            pal_log "warn" "State too large (>${max_kb} KB), skipping: $1"
+            printf '%s\n' "$1" >> "$ledger" 2>/dev/null || true
+        fi
         return 1
     fi
     return 0

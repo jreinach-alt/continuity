@@ -108,3 +108,14 @@ VERIFIED `build/Continuity.pak` set (byte-compare enforced), checksums
 manifest byte-verified by on-device preflight. Never distribute from a
 git working tree (CRLF history — NextUI field notes rule, carried
 over).
+
+## State size cap (owner decision, 2026-07-09)
+
+The RG40XX V's N64 (~16-25 MB) and Dreamcast (~30 MB) states all hit
+the original 8 MB `CONTINUITY_STATE_MAX_KB` default — the cap predated
+big-console cores in the fleet. Owner raised the default to **64 MB**
+(covers every current core, stays under GitHub's 100 MB hard file
+limit; env-tunable per device). Companion defect, same log: a skipped
+state re-candidates on every scan, so the warning repeated ~9×/30s
+poll forever — `cd_state_size_ok` now warns once per file per daemon
+run via a per-process ledger (subshell-safe).

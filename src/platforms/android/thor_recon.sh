@@ -29,6 +29,23 @@
 # volume). Unusual locations can be force-probed with
 #   CONTINUITY_ROM_ROOTS=/abs/path1:/abs/path2 sh thor_recon.sh
 #
+# Windows / WSL note: WSL cannot see USB devices, so a Linux adb
+# installed inside Ubuntu-on-Windows finds no device. Either:
+#   a) run WITHOUT a PC — Termux local mode (above): install Termux
+#      (F-Droid build), then
+#        termux-setup-storage && pkg install curl
+#        curl -LO <raw URL of this file>
+#        CONTINUITY_RECON_LOCAL=1 sh thor_recon.sh
+#        cp CONTINUITY_THOR_RECON.txt ~/storage/shared/
+#      and copy the report off over plain MTP file transfer. (Termux is
+#      subject to package-visibility filtering — the RetroArch package
+#      section may be empty; manual checklist M5 covers it.)
+#   b) use the WINDOWS adb from WSL: unzip Google platform-tools on the
+#      Windows side, then
+#        sudo ln -s /mnt/c/platform-tools/adb.exe /usr/local/bin/adb
+#      USB handling stays on Windows; this script already strips the
+#      CRs that adb.exe emits.
+#
 # Alternative (no PC): run directly on the device in Termux with
 #   CONTINUITY_RECON_LOCAL=1 sh thor_recon.sh
 # (local mode runs the same probes through the device shell; Termux can

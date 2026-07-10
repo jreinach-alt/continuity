@@ -119,3 +119,49 @@ limit; env-tunable per device). Companion defect, same log: a skipped
 state re-candidates on every scan, so the warning repeated ~9×/30s
 poll forever — `cd_state_size_ok` now warns once per file per daemon
 run via a per-process ledger (subshell-safe).
+
+## OTA updates (Sprint 3.2)
+
+After the one-time zip install, muOS updates arrive over WiFi through
+the same channel infrastructure as the Brick — `src/platforms/muos/update.sh`
+(the ota_* functions) driven by the **"Continuity Update"** Task Toolkit
+tap (`MUOS/task/Continuity Update.sh`).
+
+- **Safety boundary (same as the Brick).** Scripts and the vendored
+  busybox are OTA-safe: a torn or corrupt fetch fails verification and
+  the live install is left untouched, and a bad busybox copy fails the
+  daemon's fail-open self-test (falls back to device sh). A **git-binary
+  change still warrants a card swap** — the transport the updater itself
+  rides is not something to trust to a partial over-the-air copy.
+- **Task-tap is the consent.** muOS has no show2 / button prompt, so
+  tapping the task IS the go-ahead: it reports current → fetched
+  version, stage-applies, and says the change takes effect on the next
+  daemon restart/boot. Failures name themselves + the `.continuity/update.log`
+  path; the exit code is honest.
+- **Staged verified apply.** The updater fetches the channel's pinned
+  commit into a persistent sparse clone at `.continuity/ota-repo`
+  (sparse path `build/Continuity-muos.app`), verifies the fully
+  materialized tree (CRLF scan on shipped scripts + checksums.txt
+  byte/sha) BEFORE any copy touches the live tree, then fans the app out
+  to `.continuity/app/**` and the `MUOS/task`/`MUOS/init` entries back to
+  the card root. A verification failure copies nothing — no half-applied
+  tree. Binaries are rewritten only when their size differs (SD wear +
+  interruption window). Applied commit recorded in `.continuity/.ota_commit`.
+- **Channels are data on main, not branches** (identical to NextUI): the
+  durable channel name lives in `.continuity/ota_channel`, seeded once
+  from the build's `ota_channel.txt` (default `nightly`), never
+  overwritten by installs. Each check fetches `main`, reads
+  `release/channels.json` via `git show` (no checkout), and fetches the
+  pinned commit — file:// test remotes need `uploadpack.allowAnySHA1InWant`.
+  Unpublished commits on main are invisible. **No legacy branch
+  fallback** — NextUI's exists only for pre-manifest devices, and no
+  such muOS devices exist; an unreachable/missing manifest simply holds.
+- **One pin, whole fleet.** The same manifest commit carries both
+  `build/Continuity.pak` (NextUI) and `build/Continuity-muos.app` (muOS),
+  so `scripts/publish_channel.sh` publishing once updates every platform.
+- **`CONTINUITY_OTA=0`** is the kill switch — every entry point checks
+  it and names itself in the log.
+- **SD-root derivation** never trusts `$0` alone: muOS bind-mounts
+  `MUOS/task` to `/run/muos/storage/task`, so `$0/../..` resolves to
+  tmpfs. The update task probes `/mnt/mmc` first (env-overridable) and
+  records `$0` in the breadcrumb, same as the boot hook.

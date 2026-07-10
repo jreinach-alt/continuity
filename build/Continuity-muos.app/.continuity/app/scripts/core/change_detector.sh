@@ -69,21 +69,29 @@ cd_list_device_saves() {
 # ~30 MB) while staying under GitHub's 100 MB hard limit; owner-raised
 # from 8 MB (2026-07-09) when the RG40XX V's N64/Dreamcast states all
 # hit the old default.
-# cd_state_size_ok — shared size gate for state files.
-# A skipped state never reaches the repo, so it re-candidates on EVERY
-# scan — warn once per file per daemon run (field defect on the
-# RG40XX V: 9 identical warnings per 30s poll, unbounded log). The
-# warned-ledger is a per-process temp file because scans run in
-# pipeline subshells where shell variables don't persist.
+# cd_log_once <level> <key> <message> — log a message at most once per
+# daemon run for a given key. The ledger is a per-process temp file
+# because scans run in pipeline subshells where shell variables don't
+# persist (field defect on the RG40XX V: a skipped state never reaches
+# the repo, so it re-candidates on EVERY scan — 9 identical warnings
+# per 30s poll into an unrotated log).
+cd_log_once() {
+    local ledger
+    ledger="${CONTINUITY_STATE_WARN_CACHE:-${TMPDIR:-/tmp}/continuity_state_warned.$$}"
+    if ! grep -qxF -e "$2" "$ledger" 2>/dev/null; then
+        pal_log "$1" "$3"
+        printf '%s\n' "$2" >> "$ledger" 2>/dev/null || true
+    fi
+    return 0
+}
+
+# cd_state_size_ok — shared size gate for state files (warns once per
+# file per daemon run via cd_log_once).
 cd_state_size_ok() {
-    local max_kb ledger
+    local max_kb
     max_kb="${CONTINUITY_STATE_MAX_KB:-65536}"
     if [ "$(cat "$1" 2>/dev/null | wc -c)" -gt $((max_kb * 1024)) ]; then
-        ledger="${CONTINUITY_STATE_WARN_CACHE:-${TMPDIR:-/tmp}/continuity_state_warned.$$}"
-        if ! grep -qxF -e "$1" "$ledger" 2>/dev/null; then
-            pal_log "warn" "State too large (>${max_kb} KB), skipping: $1"
-            printf '%s\n' "$1" >> "$ledger" 2>/dev/null || true
-        fi
+        cd_log_once "warn" "$1" "State too large (>${max_kb} KB), skipping: $1"
         return 1
     fi
     return 0
@@ -96,6 +104,17 @@ cd_list_device_states() {
     while IFS= read -r f; do
         cd_state_size_ok "$f" || continue
         printf '%s\n' "$f"
+    done
+    # Observability: name what the patterns DIDN'T match, once per run
+    # (bounded). The .state10 field defect was invisible for a day
+    # because a file no list ever saw can't warn — this line is how the
+    # NEXT unknown shape self-documents instead (the unmapped-button
+    # precedent).
+    find "$CONTINUITY_STATES_ROOT" -type f 2>/dev/null \
+        | grep -v -e "$(pm_state_grep_re)" | head -20 | \
+    while IFS= read -r f; do
+        cd_log_once "info" "unrecognized:$f" \
+            "Unrecognized file shape in states root (not archived): $f"
     done
     return 0
 }

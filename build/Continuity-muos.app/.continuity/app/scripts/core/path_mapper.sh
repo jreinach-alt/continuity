@@ -234,12 +234,19 @@ pm_state_to_repo() {
 # pm_save_grep_re — BRE matching a save-class path suffix (.srm/.sav/.rtc)
 pm_save_grep_re() { printf '%s' '\.\(srm\|sav\|rtc\)$'; }
 
-# pm_state_grep_re — BRE matching any state name-shape path suffix
-pm_state_grep_re() { printf '%s' '\.\(st[0-9]\|state\|state[0-9]\|state\.[0-9]\|state\.auto\)$'; }
+# pm_state_grep_re — BRE matching any state name-shape path suffix.
+# Covers the five NextUI shapes (matrix §4) PLUS the muOS/RetroArch
+# realities the matrix never met (field, RG40XX V 2026-07-10):
+# multi-digit slots (.state10 — silently invisible to the old
+# single-digit pattern) and .png state thumbnails (slot siblings,
+# archived with their states per the Sprint 3.1 spec).
+pm_state_grep_re() {
+    printf '%s' '\.\(st[0-9]\|state\|state[0-9][0-9]*\|state\.[0-9]\|state\.auto\|state[0-9]*\.png\)$'
+}
 
 # pm_save_or_state_grep_re — union of the two (working-tree change filter)
 pm_save_or_state_grep_re() {
-    printf '%s' '\.\(srm\|sav\|rtc\|st[0-9]\|state\|state[0-9]\|state\.[0-9]\|state\.auto\)$'
+    printf '%s' '\.\(srm\|sav\|rtc\|st[0-9]\|state\|state[0-9][0-9]*\|state\.[0-9]\|state\.auto\|state[0-9]*\.png\)$'
 }
 
 # pm_find_saves <dir> [extra find predicates...] — save-class files under dir
@@ -250,14 +257,18 @@ pm_find_saves() {
     find "$dir" \( -name '*.srm' -o -name '*.sav' -o -name '*.rtc' \) "$@" 2>/dev/null
 }
 
-# pm_find_states <dir> [extra find predicates...] — every state shape under dir
+# pm_find_states <dir> [extra find predicates...] — every state shape under dir.
+# Structurally single-sourced: a BROAD find feeds the authoritative
+# pm_state_grep_re, so the find globs and the grep filters can never
+# drift apart again (the .state10 field defect: find and the REs both
+# said single-digit, and multi-digit slots were invisible — no warning
+# possible for a file no list ever saw).
 pm_find_states() {
     local dir
     dir="$1"
     shift
-    find "$dir" \
-        \( -name '*.st[0-9]' -o -name '*.state' -o -name '*.state[0-9]' \
-           -o -name '*.state.[0-9]' -o -name '*.state.auto' \) "$@" 2>/dev/null
+    find "$dir" \( -name '*.st[0-9]' -o -name '*.state*' \) "$@" 2>/dev/null \
+        | grep -e "$(pm_state_grep_re)" || true
 }
 
 # ── Canonical save-format mapping (Sprint 2.0) ────────────────────────

@@ -438,7 +438,11 @@ cross-language conformance suite (byte-identical on-repo artifacts vs
 the shell reference). Validation device: the owner's Ayn Thor.
 
 - **3.2a — sync core + enrollment (parity with RetroDeck 2.1):**
-  **Spec drafted 2026-07-10 — awaiting owner approval + Thor recon**
+  **Spec draft v2 2026-07-10 — recon received; owner decided R3
+  (native by-core support: opaque save dirs, required ROM-anchoring,
+  per-game core bindings + one-time duplicate picker) and R4 (inbound
+  RZIP transcode — compressed saves supported, no user action).
+  Awaiting final spec approval + the recon census re-run**
   (`docs/sprints/sprint-3.2a-spec.md`; recon:
   `src/platforms/android/thor_recon.sh`, branch
   `claude/sprint-3-2a-android-sync-zcvvr5`). Canonicalization + sync

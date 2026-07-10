@@ -1,7 +1,10 @@
 # Sprint 3.2a — Android Sync Core + Enrollment (Ayn Thor)
 
-**Status:** Draft — awaiting owner approval AND the on-device recon
-confirmation (§Recon gate below). Do not implement until both land.
+**Status:** Draft v2 — first recon received 2026-07-10; owner decided
+R3 (by-core layout: Option A, native support via per-game bindings) and
+R4 (compression: inbound RZIP transcode) the same day. Awaiting FULL
+spec approval AND the fixed-recon census re-run (map values). Do not
+implement until both land.
 **Branch:** `claude/sprint-3-2a-android-sync-zcvvr5` → PR to `main` (owner
 merges). No remote CI — `scripts/gate.sh full` is the verification.
 **Architecture gate:** `docs/design/android-client-architecture.md`
@@ -131,6 +134,11 @@ to the shell reference, these are the exact bytes `core` must produce:
    ext-stripped name), heuristic fallback = strip one trailing 2–4 char
    alphanumeric extension (`pm_rom_ext_strip`, matrix §2),
    `.sav`→`.srm` class mapping, `.rtc` kept.
+   **Android layout note (R3 resolution, decided 2026-07-10):** the
+   Thor sorts saves BY CORE, so the device dir component is OPAQUE and
+   ROM-anchoring is REQUIRED inbound — system is resolved from the
+   enrolled ROM roots, never from the save dir (full design:
+   §R3 resolution).
    **Container handling — DECLARED deviation from the shell platforms
    (owner-directed 2026-07-10):** a healthy RZIP device file
    **transcodes inbound** — decoded to raw payload by a Kotlin RZIP
@@ -210,6 +218,14 @@ to the shell reference, these are the exact bytes `core` must produce:
    equivalent); the five state name shapes. Where the shell had a known
    call-site defect (2.1 Open Item 1, since fixed on main: rc-3
    quarantine logging), parity is to CURRENT main behavior.
+   **Android-only additions (R3 resolution):** the per-game binding
+   lifecycle threads through the phases — cold start auto-binds
+   single-location games and surfaces duplicate/ambiguity findings;
+   poll and stale catch-up resolve device paths through bindings;
+   materialization (cold start, boot pull) writes through bindings and
+   DEFERS unbound repo saves; the first sync after a late bind runs
+   the per-file cold-start semantic (repo wins on device, fresh local
+   bytes preserved as `.local`).
 7. **JGit engine rc mapping** — `se_pull` 0/1/2 and `se_push` 0/1/2
    semantics: ff-only pull (fetch + ancestor check; diverged → 1),
    network-classed failures → 2 (JGit `TransportException` et al.
@@ -403,7 +419,7 @@ data. The findings below are already conclusive:
   exercises the transcode path with real data during hardware
   validation. `savestate_file_compression = true` needs no action —
   states archive verbatim (format-matrix §7).
-- **R3 — STRUCTURAL FINDING, decision required (below):** save
+- **R3 — STRUCTURAL FINDING, DECIDED: Option A (below):** save
   sorting is **by CORE NAME** (`sort_savefiles_enable = true`,
   by-content `false`): the device layout is
   `saves/<Core Name>/<Game>.srm` (`Snes9x/`, `mGBA/`, `bsnes-hd
@@ -430,51 +446,50 @@ data. The findings below are already conclusive:
   + tests as a separate owner-approved micro-change; the Kotlin port
   and the conformance corpus pin whichever set core lands on.
 
-### R3 decision — two ways to meet the by-core layout
+### R3 resolution — native by-core support (Option A, DECIDED 2026-07-10)
 
-**Option A (recommended — adapt to the device, zero disruption):**
-support by-core natively.
+Owner decision: **adapt to the device — support by-core natively.**
+The rejected alternative (Option B: reconfigure RetroArch to
+sort-by-content and hand-consolidate the existing saves into
+system-named dirs) meant one-time manual file surgery on a working
+device and changed RetroArch's save behavior for everything played
+thereafter. Normative design, reflected in byte-inventory 1/6,
+file-table 3/4, and AC2/AC6:
 
-- Inbound identity: ROM-anchoring becomes REQUIRED (not fallback) on
-  this layout — a save's system is the system dir of the matching ROM
-  under the enrolled ROM roots; `system_paths` maps canonical names to
-  ROM-tree dir names (values from the re-run census).
-- **Per-game core binding** (new, device-local, never committed): sync
-  binds each canonical identity to the core dir that holds its save.
-  Auto-bound when exactly one core dir has the game (the common case);
-  multi-core duplicates become a NAMED enrollment/status finding the
-  user resolves once per game — pick which core's save syncs; the
-  unchosen files stay on device untouched, just unsynced. Never
-  auto-picked (wrong-merge corrupts a 40-hour file; duplicates cost
-  nothing — Decision-2 ethos).
-- Materialization writes through the binding. A repo save with no
-  binding **defers** until the game is first played on the Thor
-  (RetroArch creates the file, the binding auto-records), and that
-  first sync runs the per-file COLD-START semantic: repo wins on
-  device, the fresh local bytes are preserved as `.local`. This is the
-  conservative guard against a fresh play-through silently clobbering
-  the repo's long-running save — a hazard unique to late-materializing
-  layouts (shell platforms materialize before play, so the rule is
-  additive, not divergent; on-repo artifacts are unchanged).
-- Scope cost: binding store + duplicate picker + late-materialize rule
-  (+ tests). Conformance vs the shell reference is unaffected
-  (bindings are Android-local).
+- **The device save-tree dir component is OPAQUE.** RetroArch sorting
+  may produce a core name (the Thor), a content-dir name
+  (RetroDeck-style), or nothing (flat) — the mapper never interprets
+  it. Inbound identity is **ROM-anchored, REQUIRED** (not fallback): a
+  save's system is the system dir of the matching ROM under the
+  enrolled ROM roots; `system_paths` maps canonical names to ROM-tree
+  dir names (values from the census re-run). One mechanism thus covers
+  by-core, by-content, flat, and mixed-history trees — unit rows cover
+  each shape, and the former flat-layout contingency (old C3)
+  dissolves into supported behavior.
+- **Ambiguity is never guessed:** a save basename matching ROMs in
+  MORE than one system is a NAMED finding, resolved through the same
+  picker surface as duplicates (below); that save is not synced until
+  resolved. Wrong-merge corrupts a 40-hour file; waiting costs nothing
+  (Decision-2 ethos).
+- **Per-game core binding** (device-local state, never committed):
+  sync binds each canonical identity to the device location (core dir)
+  holding its save. Auto-bound when exactly one location has the game
+  — the common case. Multi-location duplicates (ALttP (MSU1) under
+  four core dirs) become a NAMED enrollment/status finding the user
+  resolves ONCE per game — pick which copy syncs; unchosen files stay
+  on device untouched, just unsynced. Never auto-picked.
+- **Materialization writes through the binding.** A repo save with no
+  binding DEFERS until the game is first played on the Thor
+  (RetroArch creates the device file, the binding auto-records), and
+  that first sync runs the per-file COLD-START semantic: repo wins on
+  device, the fresh local bytes are preserved as `.local`. This is
+  the anti-clobber guard for late-materializing layouts (shell
+  platforms materialize before play, so the rule is additive, not
+  divergent; on-repo artifacts are unchanged, which is why conformance
+  vs the shell reference is unaffected — bindings are Android-local).
 
-**Option B (simpler build — reconfigure the Thor once):** owner flips
-RetroArch to sort-by-content (M2 off / M3 on) and moves the existing
-saves into system-named dirs once, resolving the multi-core duplicates
-by hand during the move (only the owner knows which core's save is
-canon). The device layout becomes `saves/<system>/` — the RetroDeck
-shape — and the spec builds exactly as originally written. Cost:
-one-time manual file surgery on a working setup, and RetroArch's save
-lookup changes for everything played thereafter.
-
-Neither option requires any compression action — R4 is resolved by the
-inbound transcode (no user-facing compression handling remains). If A
-is chosen, the affected sections are: file table #4 (binding store + duplicate
-picker in the app module), byte-inventory item 6 (late-materialize
-rule), AC2/AC6 (binding + duplicate cases), and C3 (flat layout stays
-a future contingency; by-core becomes supported behavior).
+R4 required no user action under either option — resolved separately
+by the inbound transcode (above).
 
 ## In scope (file table)
 
@@ -482,8 +497,8 @@ a future contingency; by-core becomes supported behavior).
 |---|------|------|
 | 1 | `src/platforms/android/thor_recon.sh` | On-device recon (already on branch — recon tooling, not product code). |
 | 2 | `src/platforms/android/{settings,build}.gradle.kts`, `gradle.properties`, `gradlew*`, `gradle/wrapper/*`, `.gitignore` | Gradle skeleton, pinned wrapper + dependency versions (Kotlin, JGit, JUnit, WorkManager, security-crypto). |
-| 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor, sparse), `ContainerSniff` (RZIP magic) + `RzipCodec` (inbound decode via `Inflater`, reference-oracle-validated, bomb cap, named-skip failure path; payload-compare helpers), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `StateArchive` (five shapes, size cap), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
-| 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste + ordered ROM-roots selection across volumes; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
+| 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor required on opaque-dir layouts, sparse), `CoreBindings` (per-game binding store, device-local JSON: auto-bind, duplicate + cross-system ambiguity findings, late-bind cold-start rule), `ContainerSniff` (RZIP magic) + `RzipCodec` (inbound decode via `Inflater`, reference-oracle-validated, bomb cap, named-skip failure path; payload-compare helpers), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `StateArchive` (five shapes, size cap), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
+| 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste + ordered ROM-roots selection across volumes; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), duplicate/ambiguity resolution picker (one-time per game, drives `CoreBindings` — R3 resolution), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
 | 5 | `config/platform_maps/retroarch_android.json` | → schema 2.0: `save_name_style: retroarch`, `save_container: raw`, `rom_roots`, `system_paths` — every value recon-validated (R3/R5), informational `_notes` for the storage constraint. |
 | 6 | `tests/fixtures/conformance/` | Corpus: `cases/` + `expected/` + `generate_expected.sh` + `README.md`. |
 | 7 | `tests/unit/core/test_conformance_corpus.sh` | Shell side of the conformance suite (both privilege passes). |
@@ -525,7 +540,11 @@ Open-Item precedent), don't fix it in-lane.
    phase state-file lifecycle (sentinel/commit/clean-shutdown ordering,
    offline-deferred cold-start sentinel); ordered multi-root
    ROM-anchoring (first match wins; absent root → sparse skip, named
-   status); JGit rc mapping incl. push
+   status); core-binding lifecycle (auto-bind single-location games;
+   multi-location duplicates and cross-system basename ambiguity →
+   named findings, nothing synced, never auto-picked; late-bind first
+   sync = per-file cold start with `.local` preserved; by-core,
+   by-content, and flat tree shapes all covered); JGit rc mapping incl. push
    retry/backoff and non-FF rejection; enrollment validation matrix;
    PAT never appears in any log line or exception message (masking
    test).
@@ -549,8 +568,11 @@ Open-Item precedent), don't fix it in-lane.
    left ON** (recon-confirmed reality): the device's RZIP file lands in
    the repo as raw payload, and a materialized raw save loads correctly
    in RetroArch — the transcode path proven on hardware end to end;
-   boot pull applies a remote change; a WorkManager periodic cycle
-   fires with the app backgrounded; results in the field notes doc.
+   the real multi-core duplicate set (ALttP (MSU1) under four core
+   dirs) surfaces in the picker, the chosen copy syncs, and the
+   unchosen copies stay untouched on device; boot pull applies a
+   remote change; a WorkManager periodic cycle fires with the app
+   backgrounded; results in the field notes doc.
 7. **Three-device round-trip (owner-run):** the
    `android-validation.md` protocol passes across Brick ⇆ Thor ⇆ Deck —
    canonical on-repo names, sha256 byte-match at each hop, sparse
@@ -583,13 +605,13 @@ Open-Item precedent), don't fix it in-lane.
   the format is RetroArch's own), that is a defect investigation, not
   a data-loss event: the device file is untouched and RetroArch still
   reads it.
-- **C3 — flat saves, no sorting (R3 = flat):** the shell mapper
-  requires a `<system_dir>` path component, so flat is out of the 2.1
-  parity contract. Preferred resolution: owner enables "Sort Saves into
-  Folders by Content Directory Name" (one toggle; matches RetroDeck's
-  shipped config). Fallback (spec amendment, re-approval): ROM-anchored
-  system inference for flat trees — deliberately NOT built
-  speculatively.
+- **C3 — RETIRED into the R3 resolution (2026-07-10):** the
+  opaque-dir + required-ROM-anchoring design handles by-core (the
+  Thor), by-content (RetroDeck-style), flat, and mixed trees with one
+  mechanism, so flat-layout support no longer needs a contingency —
+  it needs unit rows (AC2 covers each shape). Residual note: a flat
+  tree leans harder on the cross-system basename ambiguity finding —
+  still surfaced, still never guessed.
 - **C4 — Gradle cold-cache in the gate:** first `test_android.sh` run
   needs network for pinned dependencies; if the container is offline at
   that moment the step fails NAMED (not skipped) — rerun when online.

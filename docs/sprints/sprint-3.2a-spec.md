@@ -1,10 +1,10 @@
 # Sprint 3.2a — Android Sync Core + Enrollment (Ayn Thor)
 
-**Status:** Draft v2 — first recon received 2026-07-10; owner decided
-R3 (by-core layout: Option A, native support via per-game bindings) and
-R4 (compression: inbound RZIP transcode) the same day. Awaiting FULL
-spec approval AND the fixed-recon census re-run (map values). Do not
-implement until both land.
+**Status:** Draft v2 — recon COMPLETE (both runs 2026-07-10; gate
+CLOSED, R1–R6 all settled — findings below), R3 decided (by-core:
+Option A) and R4 decided (inbound RZIP transcode) by owner the same
+day. Awaiting ONE thing: full spec approval. Do not implement until it
+lands.
 **Branch:** `claude/sprint-3-2a-android-sync-zcvvr5` → PR to `main` (owner
 merges). No remote CI — `scripts/gate.sh full` is the verification.
 **Architecture gate:** `docs/design/android-client-architecture.md`
@@ -340,7 +340,7 @@ same conditional style as the existing qemu checks:
    verification hermetic; the byte-contract code all lives in `core`,
    which IS gated.
 
-## Recon gate (owner action before implementation is merged)
+## Recon gate — CLOSED 2026-07-10 (both runs received; R1–R6 settled in §Recon findings)
 
 `src/platforms/android/thor_recon.sh` is on the branch (read-only; adb
 from a PC, or `CONTINUITY_RECON_LOCAL=1` in Termux on the device; a
@@ -429,14 +429,42 @@ data. The findings below are already conclusive:
   bsnes-hd beta AND Mesen-S), making device→canonical a many-to-one
   collapse. Neither the flat nor by-content shapes the original C3
   contemplated.
-- **R5/R6 partial:** SD volume `388C-68F7` present. `Roms`/`ROMs`/
-  `roms` resolve to ONE case-insensitive directory per volume
-  (emulated storage + FAT); internal `ROMs` appears empty; the SD
-  tree carries content (`3do`, `N3DS` visible; full per-system census
-  pending the fixed re-run). ES-DE is present on both volumes — its
-  system-dir naming is the likely `system_paths` vocabulary. Inert
-  PowerShell scripts nested under `N3DS/7Z/` are clutter, not a
-  layout violation (3DS is not a synced system).
+- **R5/R6 ✓ (census complete, second run 2026-07-10):** the ROM root
+  is **`/storage/388C-68F7/Roms`** — the SD volume (`Roms`/`ROMs`/
+  `roms` alias to one case-insensitive directory; the internal
+  `/storage/emulated/0/ROMs` exists but is EMPTY; `ES-DE` dirs on
+  both volumes are frontend config, not ROMs). Flat
+  `<root>/<System>/` layout confirmed (the only nested files are
+  inert PowerShell scripts under `N3DS/7Z/` — not a synced system).
+  24 system dirs on-device; the 14 canonical-taxonomy systems map to
+  (v2 `system_paths`, ROM-anchoring vocabulary — these values are
+  approved WITH this spec and land in
+  `config/platform_maps/retroarch_android.json` + the path-mapper
+  test rows at implementation):
+  `gb→GB, gbc→GBC, gba→GBA, nes→NES, snes→SNES, genesis→Genesis,
+  sms→MasterSystem, gg→GameGear, pce→PCEngine, ps1→PSX, n64→N64,
+  nds→NDS, psp→PSP, arcade→NeoGeo`.
+  `arcade→NeoGeo` note: a `MAME` dir also exists (1 file) but the
+  device's FBNeo-class saves are NeoGeo titles; MAME stays unmapped
+  in 3.2a (single-dir-per-system mapper contract).
+  **Out-of-taxonomy inventory** (present on-device, NOT synced in
+  3.2a — taxonomy expansion is a separate owner decision, since SRAM
+  byte-portability is verified only for the founding systems):
+  Dreamcast, Saturn (a real YabaSanshiro `.srm` exists), SegaCD,
+  PCEngineCD, GC, PS2, N3DS, PSVita, 3do, adam; plus standalone-emu
+  content (`PSP/` PPSSPP dir, `Azahar` 3DS) — recon M7 territory.
+- **Container census (completes R4's evidence):** 12 of 15 saves are
+  RZIP, **3 are raw — and they are exactly the bsnes-family copies**
+  (bsnes ×2, bsnes-hd beta ×1), which write raw even with
+  `save_file_compression = true`. One device, one setting, MIXED
+  containers: per-FILE sniffing (never a per-device container
+  assumption) is validated as a requirement, and the transcode is the
+  mainline path, not an edge case. The duplicate set is
+  container-mixed too (ALttP: Snes9x/Mesen-S RZIP vs bsnes-family
+  raw), so duplicate comparison MUST be payload-level.
+- **Binding scale confirmed small:** 16 core dirs, 9 holding saves,
+  ~22 save files total — the picker moment is minutes, not an
+  onboarding wall.
 - **New cross-platform finding — multi-digit state slots:**
   `Shining Force (USA).state10` exists on-device. The shared pattern
   set (`pm_state_grep_re` / `pm_find_states`, matrix §6) matches only
@@ -477,7 +505,13 @@ file-table 3/4, and AC2/AC6:
   — the common case. Multi-location duplicates (ALttP (MSU1) under
   four core dirs) become a NAMED enrollment/status finding the user
   resolves ONCE per game — pick which copy syncs; unchosen files stay
-  on device untouched, just unsynced. Never auto-picked.
+  on device untouched, just unsynced. Never auto-picked. Refinement
+  (recon-informed): duplicates whose decompressed PAYLOADS are all
+  byte-identical auto-bind silently — equivalence is proven, not
+  guessed (binding goes to the most-recently-modified copy); the
+  picker is reserved for genuinely divergent bytes. Comparison is
+  payload-level by necessity: the Thor's real ALttP set mixes
+  containers across copies (RZIP and raw).
 - **Materialization writes through the binding.** A repo save with no
   binding DEFERS until the game is first played on the Thor
   (RetroArch creates the device file, the binding auto-records), and
@@ -499,7 +533,7 @@ by the inbound transcode (above).
 | 2 | `src/platforms/android/{settings,build}.gradle.kts`, `gradle.properties`, `gradlew*`, `gradle/wrapper/*`, `.gitignore` | Gradle skeleton, pinned wrapper + dependency versions (Kotlin, JGit, JUnit, WorkManager, security-crypto). |
 | 3 | `src/platforms/android/core/` (module) | `PlatformMap` (v2 JSON), `PathMapper` (styles, ext-strip, ROM-anchor required on opaque-dir layouts, sparse), `CoreBindings` (per-game binding store, device-local JSON: auto-bind, duplicate + cross-system ambiguity findings, late-bind cold-start rule), `ContainerSniff` (RZIP magic) + `RzipCodec` (inbound decode via `Inflater`, reference-oracle-validated, bomb cap, named-skip failure path; payload-compare helpers), `ConflictWriter` (v2 + `.local`), `SyncEngine` (JGit: clone/ff-pull/push-retry/stage/commit trailers/rc mapping), `Phases` (cold/boot/poll/stale + pull-conflict handler + reconcile cooldown), `Enrollment` (validation rules ported exactly: `[a-z0-9-]`, ≤32, no edge hyphens; device JSON; `.gitignore` seed), `StateArchive` (five shapes, size cap), `ContinuityState` (sentinel/commit/clean-shutdown/last_status files), `Cli` (headless driver), JUnit tests incl. the conformance executor. |
 | 4 | `src/platforms/android/app/` (module) | Manifest (`MANAGE_EXTERNAL_STORAGE`, `INTERNET`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`), All-Files-Access grant flow, enrollment Activity (repo URL + device name + PAT paste + ordered ROM-roots selection across volumes; setup.json import from the storage root as a convenience, same schema + delete-on-success rules as the Brick), duplicate/ambiguity resolution picker (one-time per game, drives `CoreBindings` — R3 resolution), Keystore-backed PAT store, sync coordinator (single-flight mutex + lifecycle hooks), WorkManager periodic + expedited boot work, boot receiver, optional "Sync while playing" foreground service (minimal notification; polish is 3.2c), preflight/diagnostic report (named errors on-screen + `CONTINUITY_DIAGNOSTIC.txt` at the storage root — observability rule), file+logcat logging. |
-| 5 | `config/platform_maps/retroarch_android.json` | → schema 2.0: `save_name_style: retroarch`, `save_container: raw`, `rom_roots`, `system_paths` — every value recon-validated (R3/R5), informational `_notes` for the storage constraint. |
+| 5 | `config/platform_maps/retroarch_android.json` | → schema 2.0: `save_name_style: retroarch`, `save_container: raw` (what we WRITE; inbound is per-file sniff + transcode), `rom_roots: ["Roms"]`, `system_paths` = the recon-validated ROM-dir vocabulary pinned in §Recon findings R5/R6 (approved with this spec), `_notes` for the opaque-save-dirs model + mixed-container census. |
 | 6 | `tests/fixtures/conformance/` | Corpus: `cases/` + `expected/` + `generate_expected.sh` + `README.md`. |
 | 7 | `tests/unit/core/test_conformance_corpus.sh` | Shell side of the conformance suite (both privilege passes). |
 | 8 | `tests/integration/test_android_cross_device.sh` | Brick(shell) ⇆ Kotlin-CLI over one `file://` remote; named JVM-absent skip. |
@@ -513,6 +547,7 @@ by the inbound transcode (above).
 | 16 | `docs/roadmap.md` | 3.2a status updates. |
 | 17 | `docs/sprints/sprint-3.2a-summary.md` | Handoff artifact (at completion). |
 | 18 | `docs/platform/thor-field-notes.md` | Created during on-device validation (hardware-validated traps; NextUI field-notes analog). |
+| 19 | `tests/unit/core/test_path_mapper.sh` | Android rows updated to the recon-validated v2 values (they currently assert the v1 guesses). Mapper-mechanics coverage only — the Android RUNTIME treats save dirs as opaque (R3 resolution); these values serve ROM-anchoring. |
 
 **No changes to `src/core/**`, `src/platforms/nextui/**`,
 `src/platforms/onion/**`, `src/platforms/retrodeck/**`.** If Kotlin

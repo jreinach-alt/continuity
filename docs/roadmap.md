@@ -497,6 +497,14 @@ as undo — unlike saves). Cross-emulator tier: see
 `docs/design/state-transmutation.md` (R&D framework, perpetually
 experimental; repo-side compute via the Continuity Transmuter).
 
+**Spike T2.0 — proposed 2026-07-11 (owner-requested):** decisive
+rule-in/rule-out experiment for the cross-emulator tier — executes the
+transmutation doc's kill criterion on the deliberately-favorable pilot
+pair Mesen2 → bsnes, SNES, plain carts only. Deliverable is a verdict
+with evidence, not a feature; SRAM contract untouched either way.
+Spec: `docs/sprints/spike-t2.0-snes-spec.md` (DRAFT, pending
+approval).
+
 ## Sync robustness backlog (gap review 2026-07-07)
 
 From an offline-queue/dedupe contract review; ordered by severity:

@@ -75,11 +75,17 @@ u32 `0x5A220000` + u32 rleStateSize + u32 rlePreviewSize +
 1. Per-chip field inventory: walk every `Serialize(s)`/`serialize(s)`
    for SNES-relevant chips in both trees → CMS-SNES v1 mapping table
    (`cms/`). The bulk of remaining P0.
-2. `mss_dump` + `bst_dump` decode oracles + unit tests over StateProbe
-   fixtures (import ROM+manifest from SuperForge `de79be4`).
-3. Verify SuperForge's committed `MesenCore.so` was built at (or
-   format-compatibly near) the Mesen2 pin — else rebuild at pin via
-   their `build_mesen2.sh`.
+2. `mss_dump` + `bst_dump` decode oracles + unit tests. Fixtures are
+   now IN-REPO (`tests/fixtures/transmute/stateprobe/`: ROM, manifest,
+   genconfig, `beacon_gen2.mss` captured 2026-07-11 via MesenRunner) —
+   no SuperForge access needed for any of P0. MSS header already
+   live-validated byte-for-byte against the captured state (incl.
+   zlib magic at the pinned offset).
+3. ~~MesenCore.so pin check~~ **CLOSED 2026-07-11**: the captured
+   state's `emuVersion` field is `0x00020101` = 2.1.1, and the pinned
+   tree IS 2.1.1 (`mesen2/Core/Shared/EmuSettings.cpp:135-142@pin`) —
+   SuperForge's committed core and our vendored pin are the same
+   version.
 4. Pin bsnes `hacks.fastPPU` default for the target build (affects
    which PPU serialization layout the encoder mirrors) and the
    `runToSave` Fast/Strict setting semantics (`system.cpp:37-38`).

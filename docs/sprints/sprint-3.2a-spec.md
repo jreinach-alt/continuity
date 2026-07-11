@@ -735,9 +735,12 @@ Open-Item precedent), don't fix it in-lane.
   (issue #14) — 3.2a ships the read-only review. Owner challenge
   2026-07-10 folded into #14: seed the mapping (and core bindings)
   from FRONTEND config — ES-DE parses passively from its
-  shared-storage dir; Daijishō via its platform-export JSON;
-  assessment + fixture asks on the issue; `thor_recon.sh` now
-  collects the ES-DE evidence (frontend section + checklist M8).
+  shared-storage dir; Daijishō has NO local export (owner-verified;
+  its backup is Google-Drive-only, unusable per the no-cloud-OAuth
+  tenet), so `daijisho_db_recon.sh` attempts direct SQLite extraction
+  (app-external storage → adb backup → root, schema-agnostic dump);
+  assessment + fixture asks on the issue; `thor_recon.sh` collects
+  the ES-DE evidence (frontend section + checklist M8).
 - State-archive retention policy for auto-increment users (issue
   #17) — 3.2a ships multi-digit coverage with the per-file cap only.
 - The core `boot_pull` unknown-path fix (issue #16) — the `.bak`

@@ -421,7 +421,7 @@ fi
 dj_pkg=$(run_dev 'pm list packages' | sed -n 's/^package://p' | grep -i daijishou | head -1 || true)
 if [ -n "$dj_pkg" ]; then
     out "Daijisho package: $dj_pkg"
-    out "Daijisho live config: Android/data/$dj_pkg (app-private, listing: $(dev_test_dir "/storage/emulated/0/Android/data/$dj_pkg")) — use the export flow (checklist M8)"
+    out "Daijisho live config: app-private (no local export exists — its backup is Google-Drive-only); Android/data listing: $(dev_test_dir "/storage/emulated/0/Android/data/$dj_pkg") — run daijisho_db_recon.sh for the DB extraction ladder (checklist M8)"
 else
     out "Daijisho package: not found (note: package-visibility filtering can hide it in Termux/local mode — M8 still applies if installed)"
 fi
@@ -444,7 +444,7 @@ out "  M4. Settings -> Directory -> 'Saves' and 'Save States': the exact paths s
 out "  M5. Which RetroArch build is actually used to play (Play Store / buildbot APK / 32-bit)?"
 out "  M6. Where do ROMs live (exact folder), and is the layout one folder per system?"
 out "  M7. Any other emulators whose saves should sync eventually (standalone cores, Dolphin, Drastic...)? (Out of 3.2a scope — inventory only.)"
-out "  M8. If Daijisho is (or was) the frontend: Settings -> export/backup the platform configuration to a file on shared storage and send it back with this report (mapping-seed fixture for issue #14)."
+out "  M8. If Daijisho is (or was) the frontend: run daijisho_db_recon.sh (same directory as this script) and send back its report + recovered files (mapping-seed fixture for issue #14 — Daijisho has no local settings export; the script probes the SQLite DB via app-external storage / adb backup / root)."
 
 out ""
 out "Recon complete. Send this file back: $report"

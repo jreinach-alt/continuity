@@ -728,7 +728,10 @@ Open-Item precedent), don't fix it in-lane.
   work, out of this sprint's lane.
 - SAF / Play Store compliance; any store distribution.
 - Save-state restore/cross-device state sync (project-wide gate).
-- Non-RetroArch emulators on Android (recon M7 inventories only).
+- Non-RetroArch emulators on Android (recon M7 inventories only;
+  discovery design is issue #18 — package census + save-location
+  registry + backup-archive floor, frontend knowledge not required;
+  `thor_recon.sh` now carries the standalone-emulator census).
 - Taxonomy expansion / promotion of backed-up systems to canonical
   sync (issue #15) — 3.2a ships only the `backup/` floor.
 - The EDITABLE system-mapping surface + taxonomy alias seeding

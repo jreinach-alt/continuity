@@ -426,6 +426,54 @@ else
     out "Daijisho package: not found (note: package-visibility filtering can hide it in Termux/local mode — M8 still applies if installed)"
 fi
 
+# --- Standalone emulators (issue #18: saves outside RetroArch) ---------
+# The frontend's routing knowledge is sealed (#14), but both facts it
+# held are observable: which emulators exist (package census) and where
+# their saves live (shared-storage probes against known locations).
+
+# probe_emu_dir <abs-dir> — report a standalone-emulator data dir.
+probe_emu_dir() {
+    _d="$1"
+    _st=$(dev_test_dir "$_d")
+    [ "$_st" = "no" ] && return 0
+    _n=$(run_dev "find \"$_d\" -maxdepth 5 -type f 2>/dev/null" | grep -c . || true)
+    out "  $_d: $_st (${_n:-0} files, depth-capped)"
+    run_dev "find \"$_d\" -maxdepth 5 -type f 2>/dev/null" | head -8 | while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        out "    ${f#"$_d"/}"
+    done
+}
+
+# probe_emu_vol <volume-root> — known standalone save/data dirs there.
+probe_emu_vol() {
+    for _name in duckstation dolphin-emu dolphin-mmjr melonDS "PSP/SAVEDATA" \
+                 Azahar AetherSX2 NetherSX2; do
+        probe_emu_dir "$1/$_name"
+    done
+}
+
+section "Standalone emulators (non-RetroArch save sources)"
+out "-- package census --"
+emu_pkgs=$(run_dev 'pm list packages' | sed -n 's/^package://p' | \
+    grep -iE 'duckstation|ppsspp|dolphin|melonds|drastic|azahar|citra|aethersx|nethersx|vita3k|redream|flycast|yabause|mupen|lemuroid|epsxe' || true)
+if [ -n "$emu_pkgs" ]; then
+    printf '%s\n' "$emu_pkgs" | while IFS= read -r p; do
+        [ -z "$p" ] && continue
+        ever=$(run_dev "dumpsys package $p" | sed -n 's/^ *versionName=//p' | head -1)
+        out "  $p (versionName ${ever:-unknown})"
+    done
+else
+    out "  none matched the known-emulator list (package-visibility filtering can hide them in Termux/local mode)"
+fi
+out "-- shared-storage save-dir probes --"
+probe_emu_vol /storage/emulated/0
+if [ -n "$vols" ]; then
+    printf '%s\n' "$vols" | while IFS= read -r v; do
+        [ -z "$v" ] && continue
+        probe_emu_vol "/storage/$v"
+    done
+fi
+
 # --- Network (sanity only) -------------------------------------------
 section "Network"
 if [ "$(run_dev 'ping -c 1 -W 3 github.com >/dev/null 2>&1 && echo ok')" = "ok" ]; then

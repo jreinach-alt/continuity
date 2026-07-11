@@ -41,6 +41,10 @@ what makes a negative result decisive:
 4. Both codebases are open, buildable headless, and pinnable
    (Mesen2 upstream was archived 2026-06 — its format is now frozen,
    which makes the pin permanent).
+5. **The owner's SuperForge project already ships a headless Mesen2
+   harness** (`jreinach-alt/SuperForge`, confirmed in-repo 2026-07-11
+   — see §SuperForge assets). The source-side harness, the hardest
+   part of P1, is substantially prebuilt and battle-tested.
 
 **Decisiveness asymmetry (pre-registered):**
 - A **structural failure** on this pair (state provably cannot be
@@ -69,6 +73,7 @@ treated as **unverified hypothesis** until pinned:
 | H5 | bsnes's loader validates a version signature and field-stream length, not semantic invariants | determines whether "loads at all" (G2) is a format problem or a semantics problem |
 | H6 | A bsnes state serialized at power-on is a valid donor template: overwrite architectural fields, keep internal fields, and the loader accepts it | this is the encode strategy — synthesis FROM the target's own power-on + load path, exactly as the design doc mandates |
 | H7 | Mesen2's state embeds settings/ROM identity that must match at load; bsnes likewise per-version | pins what the codec must carry through vs regenerate |
+| H8 | Mesen2's InteropDLL exports save/load-state entry points usable headless (the UI calls them), so SuperForge's `MesenRunner` can gain state bindings with 2 small ctypes additions | the wrapper has every needed primitive EXCEPT state save/load today (verified 2026-07-11: zero state methods in the harness) |
 
 P0 ends with each hypothesis marked CONFIRMED/REFUTED with file/line
 citations into the vendored source. A refuted H2/H6 is an early
@@ -76,6 +81,49 @@ structural-blocker candidate and triggers an owner check-in before
 further spend.
 
 ## Method
+
+### SuperForge assets (owner's prior art — surveyed 2026-07-11)
+
+`jreinach-alt/SuperForge` (in session scope; cloned at
+`/workspace/superforge`, HEAD `9bfeab3`) supplies:
+
+- **`infrastructure/test_harness/mesen_runner.py`** (~2.8k lines) —
+  headless Mesen2 via ctypes over `MesenCore.so` (InteropDLL). Already
+  provides: ROM load, deterministic frame stepping with
+  **canonical-scanline parking** (exactly the capture-phase discipline
+  this spike needs), debugger break/resume, controller injection,
+  screenshots, `read_region`/`read_bytes`/**`write_bytes`** across
+  WRAM/SRAM/VRAM/OAM/CGRAM/SPC, streaming-idle detection, and an
+  uninitialized-read detector. Missing ONLY state save/load (H8).
+  Companion tools: `dpmap.py` (globals→DP-slot mapping),
+  `visual_assertions.py`, `golden_frames.py`,
+  `tools/breakpoint_diag/mesen_watchpoint.py`.
+- **`docs/reference/fullsnes.txt`** (nocash) + distilled
+  `resources/hardware/REF-HW-002_fullsnes_nocash.md` + audit docs —
+  the hardware-semantics reference for classifying CMS fields
+  (architectural truth). Format truth still comes from vendored
+  emulator source only, per project discipline.
+- **`scripts/build_mesen2.sh`** — builds `MesenCore.so` from
+  SourMesen/Mesen2 master (unpinned, but upstream archived 2026-06 ⇒
+  master is terminal; the spike records the final commit hash as the
+  pin).
+- **SuperForge-built ROMs** (own compiler, fully known memory maps) —
+  ideal committable homebrew fixtures: liveness probes can be derived
+  mechanically from `dpmap` instead of reverse-engineered.
+- Note: SuperForge's MCP tool layer is per-session in that repo and
+  not available here; per its own AGENTS.md, direct use of the Python
+  harness is the sanctioned fallback — and is the right shape for this
+  spike's standalone CLI anyway.
+
+**Method upgrade this enables — live-core injection (control C4):**
+because the wrapper has debugger-grade *write* access, we can validate
+CMS completeness without any file encoding: decode a Mesen2 state →
+re-inject the architectural fields into a live parked Mesen2 core →
+require behaviorally identical continuation vs. natively loading that
+same state. That isolates **Question A: "is the architectural
+decomposition complete?"** from **Question B: "can we synthesize
+bsnes's file format?"** — so a failure in P2 is immediately
+attributable to semantics or to format, never ambiguous between them.
 
 ### Decomposition target: CMS-SNES v1 (from the design doc, made concrete)
 
@@ -132,14 +180,21 @@ convergence is expected). Per test case:
 
 **Controls (harness validity, before any transmutation is scored):**
 - C1: bsnes native state → bsnes: must pass.
-- C2: Mesen2 native state → Mesen2 (testrunner): must pass.
+- C2: Mesen2 native state → Mesen2 (via MesenRunner + new state
+  bindings): must pass.
 - C3: corrupted/truncated state → bsnes: harness must FAIL it loudly
   (no false-pass oracle).
+- C4: CMS decode → live-core re-injection into parked Mesen2 →
+  continuation behaviorally identical to native state load. Proves the
+  decomposition captured everything that matters BEFORE any bsnes
+  encoding is attempted (semantics/format failure isolation).
 
 ### Corpus (pre-registered before P3 runs)
 
-- 2 homebrew ROMs (redistributable — license-verified) → committable
-  fixtures for regression tests.
+- 2+ homebrew ROMs → committable fixtures for regression tests.
+  Primary source: SuperForge-built ROMs (owner-authored, license-clean,
+  compiler-known memory maps ⇒ probe tables derived mechanically from
+  `dpmap` rather than reverse-engineered).
 - 10 commercial plain LoROM/HiROM games from the owner's library
   (candidates: SMW, ALttP, Super Metroid, F-Zero, Contra III, Chrono
   Trigger, FF6, EarthBound, Gradius III, DKC — owner picks/amends).
@@ -169,7 +224,7 @@ source line — "it glitched" is not an admissible result.
 | Phase | Work | Gate to proceed | Box |
 |---|---|---|---|
 | **P0 — Format archaeology** | `fetch_refs.sh` pins both emulators by commit; build both headless; write `mss_dump` + `bst_dump` (read-only field-inventory tools against vendored serializer source); H1–H7 verdicts; CMS mapping table drafted | G0: both formats fully inventoried; no structural blocker found (else: owner check-in with evidence) | 1 session |
-| **P1 — Harness** | Mesen2 `--testrunner` + Lua capture/probe scripts; bsnes headless runner (custom minimal target linking `sfc/`, or the libretro build — timeboxed choice, must serialize byte-compatibly with the user-facing build); controls C1–C3 green | G1: same-core round-trips pass, corrupted-state control fails properly | 1–2 sessions |
+| **P1 — Harness** | Extend SuperForge `MesenRunner` with state save/load bindings (H8) — capture/probe side rides the existing wrapper; bsnes headless runner (custom minimal target linking `sfc/`, or the libretro build — timeboxed choice, must serialize byte-compatibly with the user-facing build); controls C1–C4 green | G1: same-core round-trips + live-injection control pass, corrupted-state control fails properly | 1–2 sessions (bsnes runner is now the only build risk) |
 | **P2 — Transplant** | Power-on donor encoder; CMS decode from Mesen2; first rebuilt states; bisection tooling; iterate on SMW until verdict-quality signal | G2: rebuilt state **loads** (format accepted). G3: SMW quiescent cases pass behavioral oracle | 1–2 sessions |
 | **P3 — Matrix + verdict** | Full corpus × capture-point matrix (owner runs commercial set locally or supplies ROMs to a session); hostile cases (G4); verdict per pre-registered criteria; append verdict + evidence to `state-transmutation.md`; summary handoff | Spike ends in a verdict, whichever it is | 1 session + owner corpus time |
 
@@ -189,7 +244,7 @@ decides. Mandatory owner check-in at every gate.
 | `tools/transmute/mss_dump.c`, `bst_dump.c` | state → field inventory (decode oracles) |
 | `tools/transmute/cms/cms_snes_v1.json` + `mapping_mesen2_bsnes.json` | CMS schema + field mapping (data, not code) |
 | `tools/transmute/transmute_snes.c` | decode → CMS → donor-encode pipeline |
-| `tools/transmute/harness/` | Mesen2 Lua scripts, bsnes headless runner, matrix driver, probe tables `probes/<game>.json` |
+| `tools/transmute/harness/` | MesenRunner state-binding extension (spike-local subclass or upstreamed to SuperForge — owner's call), bsnes headless runner, matrix driver, probe tables `probes/<game>.json` |
 | `tests/unit/transmute/` | oracle tests over homebrew fixtures (round-trip, dump stability, refuse-unknown-chip) |
 | `tests/fixtures/transmute/` | homebrew-derived states + hashes only |
 | `.gitignore` | add `tools/transmute/vendor/` and build outputs |
@@ -201,10 +256,17 @@ this spike touches shipped sync code, and nothing about the SRAM
 contract changes regardless of outcome.
 
 **Toolchain note:** this is desktop-tier x86_64 tooling (the design
-doc already decided transmutation never runs on device). C + POSIX
-sh; NOT BusyBox-ash-constrained; exempt from the qemu/artifact gate
-(no committed binaries). Unit tests still respect the unprivileged
+doc already decided transmutation never runs on device). C + Python
+(the SuperForge harness is Python) + POSIX sh; NOT
+BusyBox-ash-constrained; exempt from the qemu/artifact gate (no
+committed binaries). Unit tests still respect the unprivileged
 `$TMPDIR` rules.
+
+**Gate posture (owner decision, 2026-07-11):** the pre-push gate is
+disabled in spike sessions (`core.hooksPath` unset locally — the
+mainline suite doesn't exercise spike work; Startup Step 2 re-enables
+it in any mainline session). A6's full-gate green at spike close
+stands: the final handoff must not regress the mainline suite.
 
 ## Acceptance criteria (for the spike itself)
 
@@ -236,21 +298,25 @@ sh; NOT BusyBox-ash-constrained; exempt from the qemu/artifact gate
 
 ## Open questions for the owner (answer at spec approval)
 
-1. **Which Mesen artifact?** Recommendation: **standalone Mesen2**
-   (SNES core of the archived-2026-06 upstream — frozen format, best
-   debugger, headless testrunner). The alternative, the old Mesen-S
-   libretro core, is a different dead codebase with a different
-   format. Confirm Mesen2.
+1. ~~Which Mesen artifact?~~ **RESOLVED by SuperForge survey
+   (2026-07-11): standalone Mesen2**, the archived upstream's final
+   master — the exact build SuperForge's `MesenCore.so` wraps; the
+   spike records that commit hash as the pin. (Mesen-S libretro is a
+   different dead codebase; out of scope.)
 2. **Which bsnes build?** Recommendation: **bsnes-emu/bsnes master**
    (the maintained v115 lineage), pinned at spike start. bsnes-hd and
    ares are out of scope. Confirm.
 3. **Corpus picks** — amend the 10-game candidate list to match your
    library/experience (games where you know the RAM map cold are worth
    double).
-4. **SuperForge assets** — if that work left you WRAM maps, probe
-   tooling, or test states for specific games, they slot directly into
-   the invariant-probe tables; which games?
+4. ~~SuperForge assets~~ **RESOLVED (2026-07-11): surveyed** — see
+   §SuperForge assets (harness, fullsnes.txt, dpmap-derived probes,
+   SuperForge ROMs as fixtures). Remaining sub-question: should the
+   state-binding extension to `MesenRunner` land upstream in SuperForge
+   (useful there too) or stay spike-local under `tools/transmute/`?
 5. **Effort cap** — is 6 sessions the right kill-criterion bound?
+   (P1's source-side risk has collapsed thanks to the wrapper; the cap
+   now mostly buys bsnes-runner work and the corpus matrix.)
 6. **Where commercial-corpus runs happen** — your desktop with your
    library (harness ships as a local CLI), or ROMs provided to a
    session environment? (Either works; nothing commercial is ever
@@ -264,10 +330,16 @@ sh; NOT BusyBox-ash-constrained; exempt from the qemu/artifact gate
   RASTATE/bare-payload facts; unaffected by this spike.
 - `tools/rzip/reference/` — the vendored-oracle precedent this
   follows.
+- `jreinach-alt/SuperForge` (private; in session scope) —
+  `infrastructure/test_harness/mesen_runner.py`,
+  `scripts/build_mesen2.sh`, `docs/reference/fullsnes.txt`,
+  `AGENTS.md`/`CLAUDE.md` for that repo's conventions.
 - External, to be pinned by `fetch_refs.sh` in P0:
   [SourMesen/Mesen2](https://github.com/SourMesen/Mesen2) (archived
   2026-06; GPL-3.0),
   [bsnes-emu/bsnes](https://github.com/bsnes-emu/bsnes) (active),
   Mesen testrunner/Lua docs
   ([apireference](https://www.mesen.ca/docs/apireference.html),
-  [misc/testrunner](https://www.mesen.ca/docs/apireference/misc.html)).
+  [misc/testrunner](https://www.mesen.ca/docs/apireference/misc.html))
+  — testrunner path kept as fallback; primary harness is the
+  SuperForge wrapper.

@@ -162,6 +162,38 @@ is isolated. This is the highest-information failure-analysis tool and
 turns "it crashed" into a named field-level root cause — which is what
 "decisively" requires.
 
+### Primary instrument: the StateProbe diagnostic ROM (owner insight, 2026-07-11)
+
+Rather than inferring transfer fidelity from how commercial games
+behave, the spike's primary evidence comes from a purpose-built,
+owner-authored diagnostic ROM — **StateProbe** — built by a SuperForge
+session against `docs/sprints/spike-t2.0-stateprobe-brief.md` (a
+self-contained handoff brief). StateProbe seeds every architectural
+domain with known values, raises a capture beacon, then **audits its
+own state from inside whatever emulator it wakes up in**, writing a
+per-domain pass/fail result block to WRAM (mirrored to SRAM, so even
+an emulator with no memory API exports the verdict as a save file).
+Write-only PPU state is covered by a rendered witness region whose
+pixels depend on it; deliberately-parked hazards (half-written scroll
+latches, mid-mailbox APU transactions, in-flight division) arrive in
+staged profiles v0–v3.
+
+What this buys the verdict:
+- **Coverage by construction** — every domain and every named hazard
+  is exercised deliberately; a game corpus exercises whatever it
+  happens to exercise.
+- **Field-level failure attribution inside one run** — the result
+  block names the failed domain and address; most donor-bisection
+  becomes unnecessary.
+- **A fully committable Tier-1 matrix** — StateProbe is
+  redistributable, so the core evidence runs anywhere (and its states
+  double as the S1–S3 same-core regression fixtures afterward).
+
+Games do not vanish: a synthetic ROM is a *model* of fragile game
+code, not the population of it. The commercial corpus shrinks from
+primary evidence (10 games) to an **ecological-validity confirmation
+sample (3 games)**.
+
 ### Verification: behavioral, with controls
 
 Bit-identical framebuffers across different emulators are NOT the bar
@@ -188,33 +220,49 @@ convergence is expected). Per test case:
   continuation behaviorally identical to native state load. Proves the
   decomposition captured everything that matters BEFORE any bsnes
   encoding is attempted (semantics/format failure isolation).
+- C5: StateProbe booted fresh (no state transfer) in BOTH emulators to
+  the same beacon epoch → witness frames compared. Establishes whether
+  cross-emulator pixel-exact comparison is valid for this pair (both
+  claim bit-exact PPU output) or the harness must fall back to
+  within-bsnes comparisons; also calibrates the audit baseline in each
+  emulator independently.
 
 ### Corpus (pre-registered before P3 runs)
 
-- 2+ homebrew ROMs → committable fixtures for regression tests.
-  Primary source: SuperForge-built ROMs (owner-authored, license-clean,
-  compiler-known memory maps ⇒ probe tables derived mechanically from
-  `dpmap` rather than reverse-engineered).
-- 10 commercial plain LoROM/HiROM games from the owner's library
-  (candidates: SMW, ALttP, Super Metroid, F-Zero, Contra III, Chrono
-  Trigger, FF6, EarthBound, Gradius III, DKC — owner picks/amends).
-  ROMs and commercial-derived states NEVER enter the repo; runs are
-  local, results recorded as hashes + verdicts.
-- Capture points per game, all frame-edge via Lua: 3 quiescent (title,
-  menu/pause, idle overworld) + 3 hostile (mid-action, SFX burst,
-  HDMA-heavy scene / streaming-audio moment where applicable).
+**Tier 1 — StateProbe matrix (primary evidence, fully committable):**
+- StateProbe profiles v0–v3 × multiple beacon epochs. Every cell reads
+  as a per-domain pass/fail bitmap + witness-frame compare — the
+  mechanism verdict comes from this matrix.
+- StateProbe ROM, manifest, capture states, and goldens are repo
+  fixtures; the whole tier runs in CI/container with no external ROMs.
+- Delivery is staged (v0 first); the Tier-1 verdict on quiescent
+  transfer needs only v0, hazard classification needs v1–v3.
+
+**Tier 2 — commercial confirmation sample (ecological validity):**
+- 3 plain LoROM/HiROM games from the owner's library (proposed: SMW —
+  public RAM map; one HiROM RPG, e.g. Chrono Trigger or FF6; one
+  audio/HDMA stresser — owner picks). A synthetic ROM models fragile
+  game code; real games confirm the model generalizes.
+- Capture points per game, all frame-edge: 2 quiescent + 2 hostile
+  (mid-action; music-heavy scene). ROMs and commercial-derived states
+  NEVER enter the repo; runs are local, results recorded as hashes +
+  verdicts.
 - Side-measurement (design-doc open question): whether the embedded
   SRAM view can be refreshed with current SRAM at rebuild time for
-  menu-captured states.
+  menu-captured states (StateProbe can answer this precisely: its SRAM
+  is seeded and audited).
 
 ## Pre-registered verdict criteria
 
 | Verdict | Condition |
 |---|---|
-| **RULED IN (physics)** | ≥80% of quiescent cases pass across ≥8/10 commercial games; hostile-case failures root-caused to enumerable, fixable mapping gaps |
-| **RULED OUT — structural** | A load-path requirement provably unsatisfiable from architectural state + synthesis (source-cited), surviving full donor bisection; generalizes to all pairs |
-| **RULED OUT — threshold** | <30% quiescent pass after bisection within the effort cap; kill criterion fires as product decision |
-| **PARTIAL** | Between the bounds: works for named classes (e.g. quiescent-only), fails others with root causes; owner decides posture within the perpetually-experimental fence |
+| **RULED IN (physics)** | StateProbe v0 (quiescent): ALL audited domains pass across all epochs; hazard profiles (v1–v3): every failing domain has a written root cause and a classification (fixable mapping gap vs inherently unpreservable); AND 3/3 confirmation games pass their quiescent cases |
+| **RULED OUT — structural** | A load-path requirement provably unsatisfiable from architectural state + synthesis (source-cited), surviving full donor bisection — OR a StateProbe domain that fails irreducibly with the failure pinned to information absent from any architectural snapshot; generalizes to all pairs |
+| **RULED OUT — threshold** | Persistent StateProbe v0 domain failures without isolable root cause within the effort cap; kill criterion fires as product decision |
+| **PARTIAL** | Between the bounds — e.g. StateProbe clean but confirmation games fail hostile cases: works for named classes with root causes; owner decides posture within the perpetually-experimental fence |
+
+The domain bitmap makes the verdict *enumerable*: "possible" is
+asserted per-domain, per-hazard, not as a vibe about gameplay.
 
 Every failure in the matrix gets a root cause tied to a field or a
 source line — "it glitched" is not an admissible result.
@@ -225,8 +273,15 @@ source line — "it glitched" is not an admissible result.
 |---|---|---|---|
 | **P0 — Format archaeology** | `fetch_refs.sh` pins both emulators by commit; build both headless; write `mss_dump` + `bst_dump` (read-only field-inventory tools against vendored serializer source); H1–H7 verdicts; CMS mapping table drafted | G0: both formats fully inventoried; no structural blocker found (else: owner check-in with evidence) | 1 session |
 | **P1 — Harness** | Extend SuperForge `MesenRunner` with state save/load bindings (H8) — capture/probe side rides the existing wrapper; bsnes headless runner (custom minimal target linking `sfc/`, or the libretro build — timeboxed choice, must serialize byte-compatibly with the user-facing build); controls C1–C4 green | G1: same-core round-trips + live-injection control pass, corrupted-state control fails properly | 1–2 sessions (bsnes runner is now the only build risk) |
-| **P2 — Transplant** | Power-on donor encoder; CMS decode from Mesen2; first rebuilt states; bisection tooling; iterate on SMW until verdict-quality signal | G2: rebuilt state **loads** (format accepted). G3: SMW quiescent cases pass behavioral oracle | 1–2 sessions |
-| **P3 — Matrix + verdict** | Full corpus × capture-point matrix (owner runs commercial set locally or supplies ROMs to a session); hostile cases (G4); verdict per pre-registered criteria; append verdict + evidence to `state-transmutation.md`; summary handoff | Spike ends in a verdict, whichever it is | 1 session + owner corpus time |
+| **P2 — Transplant** | Power-on donor encoder; CMS decode from Mesen2; first rebuilt states; bisection tooling; iterate on StateProbe v0 (self-diagnosing) once delivered — SuperForge template ROMs serve as interim targets if v0 lags | G2: rebuilt state **loads** (format accepted). G3: StateProbe v0 all-domain pass on quiescent transfer | 1–2 sessions |
+| **P3 — Matrix + verdict** | StateProbe Tier-1 matrix (v0 + delivered hazard profiles) as G4; Tier-2 confirmation sample (3 games, owner-local or session-supplied ROMs); verdict per pre-registered criteria; append verdict + evidence to `state-transmutation.md`; summary handoff | Spike ends in a verdict, whichever it is | 1 session + owner corpus time |
+
+**Parallel track (SuperForge side, not counted in the cap):**
+StateProbe is built by a SuperForge session against
+`docs/sprints/spike-t2.0-stateprobe-brief.md` — v0 wanted by P2's
+iteration start; v1–v3 land whenever ready and extend the Tier-1
+matrix (G4 depth follows delivery). P0/P1 here have no dependency on
+it.
 
 **Effort cap (kill-criterion bound, owner-adjustable):** 6 focused
 sessions total. Any phase busting its box by 2× ⇒ stop, report, owner
@@ -237,6 +292,7 @@ decides. Mandatory owner check-in at every gate.
 | File | Action |
 |---|---|
 | `docs/sprints/spike-t2.0-snes-spec.md` | this spec |
+| `docs/sprints/spike-t2.0-stateprobe-brief.md` | self-contained StateProbe build brief (handed to a SuperForge session; the ROM itself is built THERE, consumed here as a fixture) |
 | `docs/roadmap.md` | add spike under the Proposed section |
 | `tools/transmute/README.md` | charter + how-to-run; verdict pointer when done |
 | `tools/transmute/fetch_refs.sh` | pin + fetch Mesen2/bsnes sources at exact commits into `vendor/` |
@@ -246,7 +302,7 @@ decides. Mandatory owner check-in at every gate.
 | `tools/transmute/transmute_snes.c` | decode → CMS → donor-encode pipeline |
 | `tools/transmute/harness/` | MesenRunner state-binding extension (spike-local subclass or upstreamed to SuperForge — owner's call), bsnes headless runner, matrix driver, probe tables `probes/<game>.json` |
 | `tests/unit/transmute/` | oracle tests over homebrew fixtures (round-trip, dump stability, refuse-unknown-chip) |
-| `tests/fixtures/transmute/` | homebrew-derived states + hashes only |
+| `tests/fixtures/transmute/` | StateProbe ROM + manifest + beacon states + goldens (redistributable by construction); other homebrew-derived states + hashes |
 | `.gitignore` | add `tools/transmute/vendor/` and build outputs |
 | `docs/design/state-transmutation.md` | verdict section appended at spike end (the doc is the record) |
 | `docs/sprints/spike-t2.0-snes-summary.md` | handoff artifact |
@@ -306,9 +362,9 @@ stands: the final handoff must not regress the mainline suite.
 2. **Which bsnes build?** Recommendation: **bsnes-emu/bsnes master**
    (the maintained v115 lineage), pinned at spike start. bsnes-hd and
    ares are out of scope. Confirm.
-3. **Corpus picks** — amend the 10-game candidate list to match your
-   library/experience (games where you know the RAM map cold are worth
-   double).
+3. **Confirmation-sample picks** — 3 games for Tier 2 (proposed: SMW +
+   one HiROM RPG + one audio/HDMA stresser; games where you know the
+   RAM map cold are worth double).
 4. ~~SuperForge assets~~ **RESOLVED (2026-07-11): surveyed** — see
    §SuperForge assets (harness, fullsnes.txt, dpmap-derived probes,
    SuperForge ROMs as fixtures). Remaining sub-question: should the
@@ -317,10 +373,15 @@ stands: the final handoff must not regress the mainline suite.
 5. **Effort cap** — is 6 sessions the right kill-criterion bound?
    (P1's source-side risk has collapsed thanks to the wrapper; the cap
    now mostly buys bsnes-runner work and the corpus matrix.)
-6. **Where commercial-corpus runs happen** — your desktop with your
+6. **Where Tier-2 confirmation runs happen** — your desktop with your
    library (harness ships as a local CLI), or ROMs provided to a
-   session environment? (Either works; nothing commercial is ever
+   session environment? Tier 1 (StateProbe) is fully self-contained,
+   so this now only affects 3 games. (Nothing commercial is ever
    committed.)
+7. **StateProbe brief sign-off** — approve
+   `docs/sprints/spike-t2.0-stateprobe-brief.md` (staged v0–v3 scope,
+   RESULT_SCHEMA v1 addresses, license choice for the ROM) before
+   handing it to a SuperForge session; v0 wanted by P2.
 
 ## Reference specs
 

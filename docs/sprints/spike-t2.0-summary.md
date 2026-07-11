@@ -1,28 +1,64 @@
 # Spike T2.0 — Running Summary / Findings Ledger
 
-**Status: P0 (format archaeology) IN PROGRESS** — started 2026-07-11
-immediately on spec approval. This file is the running handoff record;
-the pre-registered verdict semantics live in the spec.
+**Status: P0 (format archaeology) COMPLETE except fixture import** —
+session 2 (2026-07-11, continuation branch
+`claude/spike-t2-continuation-4ejjew`) delivered the full field
+inventory, the CMS mapping tables, both decode oracles, and their test
+suite. The one remaining P0 item — StateProbe fixture import + a real
+beacon `.mss` — is blocked on SuperForge repo access (below) and rides
+into the next session. **No structural blocker found: G0's technical
+bar is met; owner check-in before P1 is now due.**
 
 ## Files Created
 
 - `tools/transmute/fetch_refs.sh` — pinned fetch of both reference
-  trees (idempotent, refuses wrong-pin trees, never deletes).
-- `tools/transmute/README.md` — workbench charter + pin table.
-- this file.
+  trees (session 1).
+- `tools/transmute/README.md` — workbench charter + pin table (s1;
+  updated s2).
+- `tools/transmute/cms/cms_snes_v1.json` — CMS-SNES v1 schema:
+  architectural state only, every field classified, StateProbe domain
+  IDs cross-referenced, capture contract + excluded domains explicit.
+- `tools/transmute/cms/mapping_mesen2_bsnes.json` — the P0 core
+  artifact: both containers, both payload framings, the COMPLETE
+  field inventory of both formats in stream/key order with widths and
+  citations, per-field classification, CMS correspondence +
+  transforms, interrupt truth-table sketch, refuse rules, and the
+  short list of P2 pins.
+- `tools/transmute/mss_dump.c` — Mesen2 `.mss` decode oracle
+  (container header, zlib payload, keyed record walk, chip-firewall
+  refuse; exit 0/1/2 = clean/malformed/refused).
+- `tools/transmute/bst_dump.c` — bsnes `.bst` decode oracle
+  (container, nall RLE<1>, header gates exactly as `unserialize`,
+  full positional plain-cart walk at pinned widths for the
+  fastPPU=true layout, zero-residual check as the mechanical chip
+  firewall).
+- `tools/transmute/gen_fixtures.py` — deterministic synthetic
+  container fixtures + sha256 manifest.
+- `tests/fixtures/transmute/` — 6 committed fixtures + manifest
+  (valid/chip-cart/truncated `.mss`; valid/sync0/chip-residual
+  `.bst`).
+- `tests/unit/transmute/test_dumpers.sh` — 22 assertions: builds both
+  oracles, fixture-manifest integrity, decode + planted-value spot
+  checks, dump stability, every refuse/gate path, usage errors.
 
 ## Files Modified
 
-- `.gitignore` — `tools/transmute/{vendor,build}/`.
-- `docs/sprints/spike-t2.0-snes-spec.md` — approval recorded; corpus
-  Q3 partially resolved (SMW + FF3us confirmed; Star Fox re-slotted as
-  the chip-refusal NEGATIVE control — SuperFX is out of transmutation
-  scope by the firewall; third pass-game still open).
+- `.gitignore` — `tools/transmute/{vendor,build}/` (s1).
+- `docs/sprints/spike-t2.0-snes-spec.md` — s1: approval + corpus Q3;
+  s2: H3 verdict recorded in the hypothesis table.
+- `docs/roadmap.md` — spike entry status (s1; s2 refresh).
 
 ## Tests Written
 
-None yet — the P0 exit tests ride with `mss_dump`/`bst_dump` (oracle
-tests over StateProbe fixtures), per the spec's file table.
+`tests/unit/transmute/test_dumpers.sh` — 22/22 green under
+`busybox ash`, shellcheck clean, unprivileged-safe (mktemp under
+`$TMPDIR` only). Note the cross-check design: the fixture generator
+transcribes the byte layout from the mapping JSON, the dumpers
+transcribe it from the vendored serialize sources — the synthetic
+`.bst` walking to exactly zero residual (290,423/290,423 bytes)
+verifies the two independent transcriptions agree on every width.
+Semantic (emulator-produced) oracle fixtures arrive with the
+StateProbe import.
 
 ## Pins
 
@@ -31,139 +67,167 @@ tests over StateProbe fixtures), per the spec's file table.
 | Mesen2 | `b9fa69ddc6d0a331fb103fdb5eef6904305703c2` (archived upstream's final commit, 2026-06-04) |
 | bsnes | `7d5aa1e656b9171524d01b1b22917197d8121cb4` (bsnes-emu master; `SerializerVersion "115.1"`) |
 
-All citations below are `path:line@pin` in `tools/transmute/vendor/`.
+All citations are `path:line@pin` in `tools/transmute/vendor/`.
+
+**Session-2 pins (Open Items 4+5 of session 1, all resolved):**
+- `configuration.hacks.ppu.fast = true` is the DEFAULT
+  (`bsnes:sfc/interface/configuration.hpp:38`) → default `.bst`
+  states carry `fastppu=1` and the **ppu-fast layout**;
+  `PPU::serialize` always writes 3 display ints first, then
+  dispatches (`sfc/ppu/serialization.cpp:1-8`). The encoder targets
+  the fast layout; the accurate layout is inventoried (decode-refused
+  as out-of-pilot-scope — the pipeline never produces it).
+- `hacks.dsp.fast = true` default is EXECUTION-only
+  (`sfc/dsp/dsp.cpp:11`); DSP serialization layout is unaffected.
+- `runToSave` semantics (`sfc/system/system.cpp:16-108`): Fast =
+  default+fallback (run to CPU-thread sync, then force-sync
+  smp/ppu/coprocessors ignoring desyncs); Strict = resync-all loop
+  with SMP synced twice; per-title Strict overrides (Star Ocean,
+  Tales of Phantasia, ICD carts); `coprocessor.delayedSync` forced on
+  during save.
+- H3 pinned CONFIRMED — see spec table (frame-edge no-debugger path /
+  debugger-park path; both 65C816-instruction-boundary).
+- nall serializer primitives (`nall/serializer.hpp:85-137`,
+  `nall/primitives/natural.hpp:8-13`): integers LE at sizeof
+  (bool=1); `Natural<N>`/`Integer<N>` at utype width 1/2/4/8;
+  floats raw memory bytes; u8 arrays memcpy'd.
+- `int16 samplebuffer[8192]` → 16,384 bytes (`sfc/dsp/dsp.hpp:22`);
+  SPC_DSP blob fixed 640 bytes (514 meaningful + zero pad;
+  `SPC_DSP.h:61`, walk in `SPC_DSP.cpp:949-1016`).
 
 ## Hypothesis ledger (spec §Hypotheses)
 
 | # | Verdict | Evidence |
 |---|---|---|
-| H1 (Mesen2 keyed) | **CONFIRMED** | `SV(var)` stringifies field names, keys are prefix-scoped (`mesen2/Utilities/Serializer.h:11,95-102`); binary record = `[key][0x00][u32 LE size][LE value]` (`Serializer.h:255-266`); load is lookup-by-key, **missing/unknown keys are silently tolerated** (`Serializer.h:271-283`) — decode is maximally robust |
-| H2 (bsnes: no cothread stacks in normal states) | **CONFIRMED** | `synchronize` mode is a stored field; `=true` runs `runToSave()` (threads parked; `sfc/system/system.cpp:17`) and load `power(reset=false)`s before the positional read (`sfc/system/serialization.cpp:6,45`); raw stacks serialize ONLY in the `synchronize=false` rewind variant (`serialization.cpp:90-97`), which we never emit; UI saves default `synchronize=true` (`sfc/interface/interface.hpp:61`) |
-| H3 (frame-edge captures) | OPEN | fleet/libretro side is frame-edge by API; Mesen2 standalone `SaveState` runs under `AcquireLock` (`SaveStateManager.cpp:91`) — the exact suspension point needs pinning in P1 (StateProbe's beacon+epoch makes capture-point verification empirical anyway) |
-| H4 (CPU↔APU phase is the top hazard) | OPEN | experimental question — P2/P3 |
-| H5 (bsnes loader: format checks only) | **CONFIRMED** | `unserialize` checks exactly: signature `0x31545342`, exact `serializeSize` (per-cartridge dry-run `serializeInit`, `serialization.cpp:103-119`), `version[16] == "115.1"` (`emulator/emulator.hpp:38`), `fastPPU` flag match — then loads positionally, **no checksum, no ROM hash, no semantic validation** (`serialization.cpp:25-48`). G2 (acceptance) is purely mechanical |
-| H6 (power-on donor viable) | STRENGTHENED, pending P2 empirics | loader power-cycles before applying `synchronize=true` states — donor-internal consistency burden is minimal by construction (`serialization.cpp:45`) |
-| H7 (states carry ROM identity that must match) | **REVISED** | Mesen2: ROM name stored but **never validated**; no hash in format ≥ v4 (40-byte SHA1 existed only ≤ v3: `SaveStateManager.cpp:180-183,196-200`); gates are emuVersion ≤ running, formatVersion ≥ 3 (= 4 current: `SaveStateManager.h:23-24`), consoleType. bsnes: no ROM identity either — only the four H5 checks. Identity discipline is OURS to enforce (manifest sha256), not the emulators' |
-| H8 (InteropDLL state exports) | **CONFIRMED** (2026-07-11, StateProbe delivery) | `MesenRunner.save_state_file`/`load_state_file` upstream in SuperForge; exercised by StateProbe gate 3 |
+| H1 (Mesen2 keyed) | **CONFIRMED** (s1) | `Serializer.h:255-283` — keyed records, unknown keys tolerated |
+| H2 (bsnes: no cothread stacks in normal states) | **CONFIRMED** (s1) | stacks only in `synchronize=false` rewind variant; `bst_dump` refuses those |
+| H3 (frame-edge captures) | **CONFIRMED w/ caveat** (s2) | see spec table; SPC700 sub-instruction state is the residual hazard, handled as a refuse-class |
+| H4 (CPU↔APU phase + DSP state are the top hazard) | OPEN → **NARROWED** (s2) | inventory shows both DSPs are the same blargg-lineage silicon model — `dsp_internal` maps nearly field-for-field (names align: NoiseLfsr↔noise, Counter↔counter, BrrNextAddress↔t_brr_next_addr, …). The remaining H4 core is CPU↔SMP relative phase (Thread.clock donor alignment) + SPC mid-instruction captures. P2 empirics (StateProbe v2/v3) quantify |
+| H5 (bsnes loader: format checks only) | **CONFIRMED** (s1) | 4 gates, no semantics; `bst_dump` mirrors them |
+| H6 (power-on donor viable) | STRENGTHENED (s1), unchanged | loader power-cycles before positional read |
+| H7 (ROM identity) | **REVISED** (s1) | neither format validates ROM identity; manifest sha256 is OUR discipline |
+| H8 (InteropDLL state exports) | **CONFIRMED** (s1) | StateProbe gate 3 |
 
-## Container formats (pinned, both directions)
+## Container formats
 
-**Mesen2 `.mss`** (`SaveStateManager.cpp:61-83,155-223`):
-`"MSS"` + u32 emuVersion + u32 formatVersion(4) + u32 consoleType +
-screenshot block (4×u32 + zlib framebuffer, 2 MB cap) + u32 nameLen +
-romName, then the payload from `Emulator::Serialize`
-(`Emulator.cpp:913`): `[u8 isCompressed][u32 rawSize][u32 compSize]
-[zlib]` (10 MB caps on load: `Serializer.cpp:64-91`), containing the
-keyed record stream (H1).
+Pinned in session 1; now machine-readable in
+`cms/mapping_mesen2_bsnes.json` §containers and executable in the two
+dumpers. One refinement landed in s2: the `.mss` payload's
+`[u8 isCompressed]` may legally be 0 (records to EOF, no size words)
+— `mss_dump` handles both.
 
-**bsnes `System::serialize` stream** (`serialization.cpp:1-23`):
-u32 `0x31545342` + u32 exactSize + char[16] version + char[512]
-description + bool synchronize + bool fastPPU, then `serializeAll` —
-positional nall stream (LE integers, raw byte arrays, no tags:
-`nall/serializer.hpp:85-125`), block order `random, cartridge, cpu,
-smp, ppu, dsp, [coprocessors iff cartridge.has.*], controllerPort1/2,
-expansionPort` (`serialization.cpp:52-98`). The chip firewall is
-mechanical: plain carts have no chip blocks; `cartridge.has.*` from a
-GSU cart (Star Fox) triggers the REFUSE path in our decoder.
+## Session-2 findings worth carrying (decode/encode design inputs)
 
-**bsnes `.bst` file** (`target-bsnes/program/states.cpp:1,75-100`):
-u32 `0x5A220000` + u32 rleStateSize + u32 rlePreviewSize +
-`Encode::RLE<1>(serializer stream)` + `RLE<2>(256×240 preview)`.
+1. **bsnes serializes NO controller/expansion state** — the ports'
+   `serialize()` are empty (`controller.cpp:60-61`,
+   `expansion.cpp:36-37`). A plain-cart stream is exactly
+   header+random+sram+cpu+smp+ppu+dsp. Controller shift-register
+   state mid-manual-read is unrepresentable in bsnes regardless of
+   codec → quiescent rule (auto-read results carry via joy1-4).
+2. **The DSP is the good news** (H4 narrowed): same silicon model
+   both sides, near-1:1 field mapping including envelope phase, BRR
+   position, echo offset — the design doc's "scariest" domain is a
+   mapping table, not a research problem.
+3. **The SPC700 is the sharp edge**: Mesen2 models it as a per-CYCLE
+   state machine (`spc.opStep/opSubStep/tmp1-3`); bsnes is
+   instruction-atomic. Decode rule (in mapping + CMS): refuse
+   captures with the SPC mid-instruction (partial replay can
+   double-consume read-to-clear $FD-FF). P2 measures how often
+   beacon-parked captures hit this (expectation: rarely-to-never at
+   a StateProbe idle-loop beacon; Mesen2's own save path runs an SPC
+   catch-up first).
+4. **In-flight CPU→APU port writes** (`spc.pendingCpuRegUpdate` +
+   staged values) are a Mesen2-only 1-cycle pipeline; quiescent rule
+   = must be false (StateProbe v0 guarantees), flush-rule validated
+   in P2 else refuse.
+5. **htime transform**: bsnes stores `(dot+1)<<2` master-clock
+   comparator (`sfc/cpu/io.cpp:204-215`); Mesen2 stores the raw dot
+   (`InternalRegisters.cpp:352-360`). CMS canonicalizes the raw dot.
+   First worked example of a real per-field transform.
+6. **Interrupt edge pipelines differ microarchitecturally** (5
+   bsnes bools vs 3-4 Mesen2 counters/flags per line) — the one
+   mapping that needs a truth table + StateProbe v3 cadence audit
+   rather than a copy/pack transform. Sketch committed in the
+   mapping; quiescent captures sidestep it (no edge in flight).
+7. **DMA $43x0 bit crosswalk pinned by register bit, not name**
+   (Mesen2 `invertDirection`=bsnes `direction`, `decrement`=bsnes
+   `reverseTransfer`, …) — names lie, bits don't.
 
-## Open Items (P0 remainder)
+## Open Items (P0 remainder → P1 entry)
 
-1. Per-chip field inventory: walk every `Serialize(s)`/`serialize(s)`
-   for SNES-relevant chips in both trees → CMS-SNES v1 mapping table
-   (`cms/`). The bulk of remaining P0.
-2. `mss_dump` + `bst_dump` decode oracles + unit tests over StateProbe
-   fixtures (import ROM+manifest from SuperForge `de79be4`).
-3. Verify SuperForge's committed `MesenCore.so` was built at (or
-   format-compatibly near) the Mesen2 pin — else rebuild at pin via
-   their `build_mesen2.sh`.
-4. Pin bsnes `hacks.fastPPU` default for the target build (affects
-   which PPU serialization layout the encoder mirrors) and the
-   `runToSave` Fast/Strict setting semantics (`system.cpp:37-38`).
-5. H3: pin Mesen2's state-capture suspension point.
-6. bsnes headless runner build (P1 critical path).
-7. Owner: third Tier-2 pass-game (plain-cart audio/HDMA stresser).
+1. **[BLOCKED] StateProbe fixture import** — `add_repo` for
+   `jreinach-alt/SuperForge` could not complete in this
+   non-interactive session (permission stream unavailable). Next
+   session with the owner present: add the repo, copy
+   `stateprobe.sfc` + manifest (+ genconfig) from branch
+   `claude/stateprobe-diagnostic-rom-em6jh2` @ `de79be4` into
+   `tests/fixtures/transmute/`, capture a beacon `.mss` via
+   MesenRunner, and re-run `mss_dump` over it (first REAL-file oracle
+   run; assert record keys match the mapping inventory).
+2. **[BLOCKED, same cause] MesenCore.so pin check** — compare its
+   version exports against the Mesen2 pin; rebuild via SuperForge
+   `scripts/build_mesen2.sh` if drifted.
+3. bsnes headless runner build (P1 critical path, unchanged).
+4. P2 pin list — now enumerated machine-readably in
+   `mapping_mesen2_bsnes.json` §open_p2_pins (OAM bit packing, SPC
+   timer stage crosswalk, env_mode enums, dsp.step units, externalRegs
+   semantics, io.irqEnable composite, interrupt truth table, donor
+   Thread.clock, fast-PPU oam live/reload split).
+5. Owner: third Tier-2 pass-game (audio/HDMA stresser) — still open.
 
 ## Deviations from Spec
 
-None. (Star Fox corpus re-slotting is recorded as a Q3 resolution in
-the spec itself, owner-visible.)
+- `bst_dump` decodes the fastPPU=true layout only (the accurate-PPU
+  layout is inventoried in the mapping but reported as
+  out-of-pilot-scope on decode). Justification: fastPPU=true is the
+  bsnes DEFAULT, our encoder emits only that layout, and the pilot
+  pipeline never produces accurate-layout files. Recorded here as a
+  scope decision, owner-visible.
+- Synthetic container fixtures added (not in the spec's file table,
+  which lists StateProbe fixtures): the SuperForge import is blocked
+  and the dumpers need committed test inputs. They complement — not
+  replace — the StateProbe fixtures.
 
-## Session handoff — brief for the next session (P0 completion)
+## Session handoff — brief for the next session
 
-Session 1 (2026-07-11) covered: spec authored + approved; StateProbe
-brief authored; StateProbe v0 delivered by SuperForge and
-review-verified here (17/17 gates, independent rerun); reference pins;
-container-format archaeology (ledger above).
+Session 2 (2026-07-11, this branch) completed: small pins (fastPPU
+default, dsp.fast, runToSave, H3, serializer primitives), the full
+both-sides field inventory → `cms/cms_snes_v1.json` +
+`cms/mapping_mesen2_bsnes.json`, `mss_dump.c` + `bst_dump.c`,
+deterministic fixtures + 22-assertion test suite (all green).
 
-**Session closeout gate: PASSED** — `scripts/gate.sh full`, 61/61 both
-privilege passes + both shipped-artifact integrity checks (qemu checks
-skipped: no `qemu-aarch64-static` in the web container; checksums
-still verified). First run failed 60/61 on a PRE-EXISTING flake,
-handed off below.
+**G0 status: technical bar MET** — both formats fully inventoried,
+every field classified, mapping committed, dumpers green over
+fixtures, no structural blocker found. The identified hazards (SPC
+mid-instruction, in-flight port writes, interrupt pipelines,
+CPU↔SMP clock phase) all have documented rules/refuse paths, none is
+a load-path impossibility. **Owner check-in is the G0 gate** — the
+spec mandates it before P1 spend. Also deliver to the owner: the
+fixture-import blocker (item 1 above) and the fastPPU-only decode
+scope decision.
 
-**Defect handed off (pre-existing, NOT spike fallout):**
-`tests/integration/test_retrodeck_events_flow.sh` Phase 1
-("event-driven sync reached the remote", expected 0 actual 1) fails
-intermittently under full-suite load — observed twice this session in
-gate runs, passes in isolation every time (3× reconfirmed, 11/11).
-Scope: Sprint 2.2 RetroDeck event daemon test, untouched by this
-spike (docs + `tools/transmute/` only). Likely a timing assumption in
-the event-wake phase under CPU contention; owner/next mainline session
-should harden the test's wait window.
+**Startup:** standard protocol → this file → `sh
+tools/transmute/fetch_refs.sh` (~2 min). Gate posture unchanged
+(spec §Gate posture). Model regimen: Fable-class (unchanged).
 
-**Startup:** standard protocol (CLAUDE.md Steps 1–6 → this file), then
-`sh tools/transmute/fetch_refs.sh` (re-fetches vendor trees in a fresh
-container, ~2 min). Gate posture: owner disabled the pre-push hook for
-spike sessions (spec §Gate posture) — re-disable with
-`git config --local --unset core.hooksPath` after Startup Step 2
-re-enables it, or leave it on (spike pushes are docs + isolated tools;
-the fast gate passes). Model regimen: this spike is Fable-class
-(CLAUDE.md §Model Regimen — emulation/binary internals); the CMS
-field-classification judgments are exactly where that matters.
+**P1 order once G0 is acknowledged:** (1) unblock SuperForge items
+1-2 above; (2) bsnes headless runner (custom minimal target linking
+`sfc/` vs libretro build — timeboxed choice; must serialize
+byte-compatibly with the user-facing build: same SerializerVersion,
+fastPPU=true, same cart profile); (3) controls C1-C3; (4) donor
+capture + first `transmute_snes.c` decode pass against the real
+beacon `.mss`.
 
-**Task order (P0 remainder — Open Items above, expanded):**
+**Session-2 closeout gate: PASSED** — `scripts/gate.sh full`, 62/62
+both privilege passes (incl. the new transmute test in both) + both
+shipped-artifact integrity checks; qemu checks skipped (no
+`qemu-aarch64-static` in the web container; checksums still
+verified). First run failed 61/62 on the KNOWN flake below —
+reconfirmed passing in isolation (11/11) before the clean rerun,
+same protocol as session 1.
 
-1. **Field inventory → `cms/` mapping tables.** Walk every state
-   field on both sides and classify architectural / emulator-internal
-   / ambiguous-with-rule (spec §Decomposition target). Where to read:
-   - Mesen2 (keyed — record key names): `Core/SNES/*.cpp` `Serialize`
-     methods — `SnesConsole`, `SnesCpu`, `SnesPpu`, `Spc`, `NecDsp`n/a,
-     `SnesDmaController`, `InternalRegisters`, `AluMulDiv`,
-     `SnesControlManager` + `Input/`, `BaseCartridge`, `Core/SNES/DSP`
-     (audio DSP), memory manager. Grep `void .*::Serialize` under
-     `Core/SNES/`.
-   - bsnes (positional — record exact code order):
-     `sfc/{cpu,smp,dsp,cartridge,controller,expansion,memory}/serialization.cpp`,
-     `sfc/ppu/serialization.cpp` AND `sfc/ppu-fast/serialization.cpp`
-     (fastPPU flag selects the layout — pin the default first, Open
-     Item 4), plus `random` (first block) from `sfc/system/`.
-   - Output: `cms/cms_snes_v1.json` + `cms/mapping_mesen2_bsnes.json`
-     (spec file table). Every CMS field: mesen2 key ↔ bsnes stream
-     position/width ↔ transform ↔ classification ↔ fullsnes citation
-     for semantics (SuperForge `docs/reference/fullsnes.txt`).
-2. **`mss_dump` + `bst_dump`** (C, zlib for mss; RLE<1> codec for bst
-   — trivial, pin from `nall/encode/rle.hpp`) + unit tests under
-   `tests/unit/transmute/` against StateProbe fixtures.
-3. **Import StateProbe fixtures** from SuperForge branch
-   `claude/stateprobe-diagnostic-rom-em6jh2` @ `de79be4`
-   (`stateprobe.sfc`, manifest, genconfig; capture a beacon `.mss`
-   via MesenRunner) into `tests/fixtures/transmute/`. SuperForge-side
-   merge of that branch is the owner's call and does not block (pin
-   the commit).
-4. **MesenCore.so pin check** (Open Item 3) — compare its version
-   exports against the pin; rebuild via SuperForge
-   `scripts/build_mesen2.sh` if drifted.
-5. Small pins: bsnes `hacks.fastPPU` default + `runToSave`
-   Fast/Strict; Mesen2 capture suspension point (H3).
-
-**P0 exit = G0:** both formats fully inventoried, mapping table
-committed, dumpers green over fixtures, no structural blocker found —
-then owner check-in before P1 (bsnes headless runner is the P1
-critical path).
-
-**Owner loose ends:** third Tier-2 pass-game pick; SuperForge
-StateProbe branch merge (at leisure).
+**Pre-existing flake (from session 1, still open for a mainline
+session):** `tests/integration/test_retrodeck_events_flow.sh` Phase 1
+fails intermittently under full-suite load (observed once this
+session, first gate run); passes in isolation every time. Untouched
+by this spike.

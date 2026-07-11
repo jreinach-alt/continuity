@@ -1,0 +1,338 @@
+{
+  "schema": "stateprobe-manifest-v1",
+  "license": "CC0-1.0",
+  "origin": "Continuity Spike T2.0 brief -> SuperForge diagnostics/stateprobe",
+  "rom": {
+    "file": "stateprobe.sfc",
+    "sha256": "b324d2fcf836589a690ac9978b0aa7c9ce411b005ccc99f9aea5d4acdca902dc",
+    "size": 32768,
+    "mapper": "LoROM, SlowROM, 8 KiB battery SRAM, no coprocessor"
+  },
+  "profile": 0,
+  "build_id": 54233,
+  "addresses": {
+    "beacon": "7EF7F0",
+    "beacon_value": "A5",
+    "capture_buffer": "7EF200",
+    "result_block": "7EF000",
+    "sram_mirror_offset": "0000"
+  },
+  "result_schema_v1": [
+    {
+      "offset": 0,
+      "size": 4,
+      "field": "magic",
+      "value": "SPRB"
+    },
+    {
+      "offset": 4,
+      "size": 1,
+      "field": "schema_version",
+      "value": 1
+    },
+    {
+      "offset": 5,
+      "size": 1,
+      "field": "profile_id"
+    },
+    {
+      "offset": 6,
+      "size": 2,
+      "field": "build_id"
+    },
+    {
+      "offset": 8,
+      "size": 4,
+      "field": "beacon_epoch"
+    },
+    {
+      "offset": 12,
+      "size": 4,
+      "field": "audit_generation"
+    },
+    {
+      "offset": 16,
+      "size": 4,
+      "field": "domain_pass_bitmap"
+    },
+    {
+      "offset": 20,
+      "size": 4,
+      "field": "domain_ran_bitmap"
+    },
+    {
+      "offset": 24,
+      "size": 1,
+      "field": "first_fail_domain",
+      "none_value": 255
+    },
+    {
+      "offset": 25,
+      "size": 3,
+      "field": "first_fail_addr",
+      "note": "domain-local, little-endian"
+    },
+    {
+      "offset": 28,
+      "size": 4,
+      "field": "first_fail_expected"
+    },
+    {
+      "offset": 32,
+      "size": 4,
+      "field": "first_fail_actual"
+    },
+    {
+      "offset": 36,
+      "size": 4,
+      "field": "checksum",
+      "algorithm": "32-bit little-endian sum of bytes [0..36)"
+    }
+  ],
+  "domains": [
+    "WRAM",
+    "VRAM",
+    "CGRAM",
+    "OAM",
+    "ARAM",
+    "DSP",
+    "SPC_TIMERS_PORTS",
+    "SRAM",
+    "CPU_MATH",
+    "IRQ_NMI_CADENCE",
+    "HV_LATCH",
+    "MAILBOX",
+    "DMA_RESIDUE",
+    "EPOCH_CONTINUITY"
+  ],
+  "seeds": {
+    "aram": 105,
+    "cgram": 195,
+    "dma": 17,
+    "oam": 150,
+    "sram": 60,
+    "vram": 167,
+    "wram": 90
+  },
+  "pattern_function": "P(addr, seed) = (lo + 3*mid + 7*hi + seed) & 0xFF over the domain-local address (see README \u00a73 for per-domain address spaces)",
+  "expected": {
+    "beacon_max_frames": 300,
+    "epochs_per_pass": 272,
+    "gen1_max_frames": 700,
+    "gen2_max_frames": 1000,
+    "ran_pass_bitmap_full": 16271,
+    "ran_pass_bitmap_gen1": 8079
+  },
+  "math_expected": {
+    "div_q": 666,
+    "div_r": 21,
+    "m7_product": 187329,
+    "mul": 5115,
+    "residue_rddiv": 55
+  },
+  "witness": {
+    "region_px": {
+      "h": 64,
+      "w": 256,
+      "x": 0,
+      "y": 0
+    },
+    "ppu_config": {
+      "bg12nba": 33,
+      "bg1hofs": 5,
+      "bg1sc": 0,
+      "bg1vofs": 2,
+      "bg2sc": 4,
+      "bgmode": 1,
+      "cgadsub": 65,
+      "cgwsel": 0,
+      "coldata_writes": [
+        156,
+        40,
+        64
+      ],
+      "inidisp": 15,
+      "obsel": 2,
+      "tm": 19,
+      "tmw": 1,
+      "ts": 0,
+      "w12sel": 2,
+      "wh0": 88,
+      "wh1": 168,
+      "wram_port_addr": [
+        0,
+        243,
+        0
+      ]
+    },
+    "oam_witness_sprites": [
+      {
+        "tile": 0,
+        "x": 16,
+        "y": 8
+      },
+      {
+        "tile": 1,
+        "x": 200,
+        "y": 24
+      },
+      {
+        "tile": 2,
+        "x": 120,
+        "y": 40
+      },
+      {
+        "tile": 3,
+        "x": 60,
+        "y": 52
+      }
+    ],
+    "grid_cells_px": {
+      "0": {
+        "h": 16,
+        "px_x": 16,
+        "px_y": 96,
+        "w": 16
+      },
+      "1": {
+        "h": 16,
+        "px_x": 40,
+        "px_y": 96,
+        "w": 16
+      },
+      "10": {
+        "h": 16,
+        "px_x": 64,
+        "px_y": 112,
+        "w": 16
+      },
+      "11": {
+        "h": 16,
+        "px_x": 88,
+        "px_y": 112,
+        "w": 16
+      },
+      "12": {
+        "h": 16,
+        "px_x": 112,
+        "px_y": 112,
+        "w": 16
+      },
+      "13": {
+        "h": 16,
+        "px_x": 136,
+        "px_y": 112,
+        "w": 16
+      },
+      "2": {
+        "h": 16,
+        "px_x": 64,
+        "px_y": 96,
+        "w": 16
+      },
+      "3": {
+        "h": 16,
+        "px_x": 88,
+        "px_y": 96,
+        "w": 16
+      },
+      "4": {
+        "h": 16,
+        "px_x": 112,
+        "px_y": 96,
+        "w": 16
+      },
+      "5": {
+        "h": 16,
+        "px_x": 136,
+        "px_y": 96,
+        "w": 16
+      },
+      "6": {
+        "h": 16,
+        "px_x": 160,
+        "px_y": 96,
+        "w": 16
+      },
+      "7": {
+        "h": 16,
+        "px_x": 184,
+        "px_y": 96,
+        "w": 16
+      },
+      "8": {
+        "h": 16,
+        "px_x": 16,
+        "px_y": 112,
+        "w": 16
+      },
+      "9": {
+        "h": 16,
+        "px_x": 40,
+        "px_y": 112,
+        "w": 16
+      }
+    },
+    "grid_states": {
+      "gray": "not audited",
+      "green": "passed at latest pass",
+      "red": "failed (sticky)"
+    }
+  },
+  "audit_exclusions": {
+    "wram": [
+      "7E0000-7E01FF (probe DP + stack; zeroed)",
+      "7EF000-7EF7FF (control page; zeroed + documented vars)"
+    ],
+    "vram_words": [
+      "0400-07FF (BG2 status grid tilemap \u2014 repainted at runtime as a deterministic function of audit state)"
+    ],
+    "sram": [
+      "0000-0027 (result-block mirror \u2014 rewritten per pass)"
+    ],
+    "dynamic_deterministic_registers": [
+      "VMADD/OAMADD/CGADD (moved by the audit itself; deterministic per epoch)",
+      "APU ports $2140-43 (mailbox traffic)"
+    ]
+  },
+  "echo_protocol": {
+    "cpu_sends": "port1 = seq XOR payload_xor, then port0 = seq",
+    "spc_replies": "port3 = payload + spc_count, then port2 = seq",
+    "seq": "1..255 wrapping, never 0; first transaction uses seq 2",
+    "payload_xor": 195,
+    "counters": "CPU and SPC each keep a rolling count; both increment per successful transaction \u2014 a restore that loses either side's state fails domain 11"
+  },
+  "spc": {
+    "block_len": 512,
+    "dest": 512,
+    "dir_page": 3,
+    "entry": 640,
+    "fill_start": 1024
+  },
+  "sabotage_build": {
+    "make_target": "stateprobe-sabotage",
+    "purpose": "auditor-sensitivity control (continuity C3, in-ROM edition) \u2014 NOT a distributed artifact",
+    "expected_first_fail": {
+      "actual": 172,
+      "addr": 304,
+      "domain": 2,
+      "expected": 246
+    }
+  },
+  "blind_spots_v0": [
+    "domains 4/5/6 (ARAM, DSP registers, SPC timers/ports): seeded deterministically SPC-side but not audited until v2; the mailbox echo (domain 11, dual rolling counters) is the only v0 APU-continuity witness",
+    "ARAM $00F0-$00FF: underlying RAM bytes unreachable behind the SPC I/O registers; power-on random \u2014 a state-sync harness must exclude/normalize",
+    "write-only registers with no readable product (HTIME/VTIME, $2181-83, scroll/window/mode/color-math, M7 matrix beyond the A*B product): seeded to documented values, witnessed only via the witness frame",
+    "H/V latch contents: re-latched each pass by the domain-10 functional check; pre-restore latch-content survival is v1/v3 material; exact latched values are emulator-deterministic only (hardware phase varies)",
+    "PPU version bits ($213E/$213F low nibble): deliberately not asserted (legitimately differ across PPU revisions and emulators)",
+    "CGRAM bit 15: not storable (15-bit cells); reads back as PPU2 open bus; baked as 0 and masked by the audit",
+    "open-bus behavior: not exercised"
+  ],
+  "hardware_behaviors_encoded": [
+    "VRAM data-port reads return the prefetch buffer and reload from the PRE-increment address: one dummy read after a VMADD write realigns the stream (classic dummy-read pattern; verified empirically on Mesen2)",
+    "multiplication sets RDDIVL=WRMPYB, RDDIVH=0 (fullsnes $4202-4203): the domain-8 residue expectation encodes it",
+    "the IPL upload entry-command kick byte lingers on APU port 0: the SPC program absorbs it as initial last_seq (uncounted) and the CPU sequence starts at 2 so the first transaction can never collide",
+    "auto-joypad read is enabled so $4218-$421F hold deterministic values instead of power-on garbage (capture with no buttons held)"
+  ],
+  "determinism_note": "byte-exact state identity at equal epochs holds under deterministic emulation; on hardware, CPU/PPU reset phase and the free-running APU oscillator make cross-boot byte identity unattainable \u2014 all audits still pass there (range checks + handshakes)"
+}

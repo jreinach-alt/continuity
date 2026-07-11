@@ -15,10 +15,14 @@
  *   one line per record: "<key>\t<size>\t<rendering>"
  *     size <= 8: little-endian value as 0x hex (+ decimal)
  *     size >  8: crc32 of the value bytes
+ * -x <key>: write that record's raw value bytes to stdout instead
+ *   (extraction mode, for piping into od/cmp in tests and for P2
+ *   decode debugging); exit 3 if the key is absent.
  * Firewall: any key under a coprocessor prefix flips the exit to REFUSE.
  *
- * Exit: 0 clean, 2 refused (chip firewall), 1 malformed/unreadable.
- * Desktop-tier x86_64 tool; C99 + zlib. Never ships to a device.
+ * Exit: 0 clean, 2 refused (chip firewall), 1 malformed/unreadable,
+ * 3 extraction key not found. Desktop-tier x86_64 tool; C99 + zlib.
+ * Never ships to a device.
  */
 
 #include <errno.h>
@@ -71,11 +75,16 @@ static uint8_t *read_exact(FILE *f, size_t n, const char *what)
     return buf;
 }
 
-/* Payload record stream: [key bytes 0x21..0x7E][0x00][u32le size][value] */
-static int dump_records(const uint8_t *data, size_t size)
+/* Payload record stream: [key bytes 0x21..0x7E][0x00][u32le size][value].
+ * extract==NULL: dump every record, return 1 if firewall tripped.
+ * extract!=NULL: write that key's value bytes to stdout, return 0 on
+ * hit, -1 on miss (firewall does not apply in extraction mode). */
+static int dump_records(const uint8_t *data, size_t size,
+                        const char *extract)
 {
     size_t i = 0;
     int refused = 0;
+    int found = 0;
 
     while (i < size) {
         size_t kstart = i;
@@ -105,41 +114,54 @@ static int dump_records(const uint8_t *data, size_t size)
         memcpy(key, data + kstart, klen);
         key[klen] = 0;
 
-        for (const char **p = refuse_prefixes; *p; p++) {
-            if (strncmp(key, *p, strlen(*p)) == 0)
-                refused = 1;
-        }
-
-        if (vsize <= 8) {
-            uint64_t v = 0;
-            for (uint32_t b = 0; b < vsize; b++)
-                v |= (uint64_t)data[i + b] << (8 * b);
-            printf("%s\t%u\t0x%llx\t%llu\n", key, vsize,
-                   (unsigned long long)v, (unsigned long long)v);
+        if (extract) {
+            if (strcmp(key, extract) == 0) {
+                fwrite(data + i, 1, vsize, stdout);
+                found = 1;
+            }
         } else {
-            uLong crc = crc32(0L, data + i, vsize);
-            printf("%s\t%u\tcrc32=%08lx\n", key, vsize, (unsigned long)crc);
+            for (const char **p = refuse_prefixes; *p; p++) {
+                if (strncmp(key, *p, strlen(*p)) == 0)
+                    refused = 1;
+            }
+
+            if (vsize <= 8) {
+                uint64_t v = 0;
+                for (uint32_t b = 0; b < vsize; b++)
+                    v |= (uint64_t)data[i + b] << (8 * b);
+                printf("%s\t%u\t0x%llx\t%llu\n", key, vsize,
+                       (unsigned long long)v, (unsigned long long)v);
+            } else {
+                uLong crc = crc32(0L, data + i, vsize);
+                printf("%s\t%u\tcrc32=%08lx\n", key, vsize,
+                       (unsigned long)crc);
+            }
         }
         i += vsize;
     }
+    if (extract)
+        return found ? 0 : -1;
     return refused;
 }
 
 int main(int argc, char **argv)
 {
     int header_only = 0;
+    const char *extract = NULL;
     const char *path = NULL;
 
     for (int a = 1; a < argc; a++) {
         if (strcmp(argv[a], "-H") == 0)
             header_only = 1;
+        else if (strcmp(argv[a], "-x") == 0 && a + 1 < argc)
+            extract = argv[++a];
         else if (!path)
             path = argv[a];
         else
-            die("usage: mss_dump [-H] file.mss");
+            die("usage: mss_dump [-H | -x key] file.mss");
     }
     if (!path)
-        die("usage: mss_dump [-H] file.mss");
+        die("usage: mss_dump [-H | -x key] file.mss");
 
     FILE *f = fopen(path, "rb");
     if (!f) {
@@ -155,9 +177,11 @@ int main(int argc, char **argv)
     uint32_t emu_version = read_u32(f, "emu_version");
     uint32_t format_version = read_u32(f, "format_version");
     uint32_t console_type = read_u32(f, "console_type");
-    printf("mss.emu_version = %u\n", emu_version);
-    printf("mss.format_version = %u\n", format_version);
-    printf("mss.console_type = %u\n", console_type);
+    if (!extract) {
+        printf("mss.emu_version = %u\n", emu_version);
+        printf("mss.format_version = %u\n", format_version);
+        printf("mss.console_type = %u\n", console_type);
+    }
     if (format_version < 3)
         die("format_version < 3 (pre-v3 states carry a different header)");
     if (console_type != 0) {
@@ -172,8 +196,9 @@ int main(int argc, char **argv)
     uint32_t fb_h = read_u32(f, "video_height");
     uint32_t fb_scale = read_u32(f, "video_scale_x100");
     uint32_t fb_zlib = read_u32(f, "video_zlib_size");
-    printf("mss.video = %ux%u scale=%u.%02u raw=%u zlib=%u\n", fb_w, fb_h,
-           fb_scale / 100, fb_scale % 100, fb_size, fb_zlib);
+    if (!extract)
+        printf("mss.video = %ux%u scale=%u.%02u raw=%u zlib=%u\n", fb_w,
+               fb_h, fb_scale / 100, fb_scale % 100, fb_size, fb_zlib);
     if (fb_zlib >= VIDEO_ZLIB_CAP)
         die("video zlib block exceeds 2 MB load cap");
     free(read_exact(f, fb_zlib, "video zlib data"));
@@ -182,14 +207,16 @@ int main(int argc, char **argv)
     if (name_len >= 4096)
         die("implausible rom name length");
     uint8_t *name = read_exact(f, name_len, "rom name");
-    printf("mss.rom_name = %.*s\n", (int)name_len, (const char *)name);
+    if (!extract)
+        printf("mss.rom_name = %.*s\n", (int)name_len, (const char *)name);
     free(name);
 
     /* --- payload framing (Serializer.cpp:64-107) --- */
     int comp = fgetc(f);
     if (comp == EOF)
         die("truncated at payload flag");
-    printf("mss.payload_compressed = %d\n", comp == 1);
+    if (!extract)
+        printf("mss.payload_compressed = %d\n", comp == 1);
 
     uint8_t *payload = NULL;
     size_t payload_size = 0;
@@ -209,7 +236,8 @@ int main(int argc, char **argv)
             die("payload zlib decompression failed");
         free(zdata);
         payload_size = raw_size;
-        printf("mss.payload_raw_size = %u\n", raw_size);
+        if (!extract)
+            printf("mss.payload_raw_size = %u\n", raw_size);
     } else {
         /* uncompressed: records run to EOF (Serializer.cpp:99-106) */
         long pos = ftell(f);
@@ -222,20 +250,26 @@ int main(int argc, char **argv)
         if (payload_size >= MSS_SIZE_CAP)
             die("payload exceeds 10 MB load cap");
         payload = read_exact(f, payload_size, "raw payload");
-        printf("mss.payload_raw_size = %zu\n", payload_size);
+        if (!extract)
+            printf("mss.payload_raw_size = %zu\n", payload_size);
     }
     fclose(f);
 
-    int refused = 0;
-    if (!header_only)
-        refused = dump_records(payload, payload_size);
-    free(payload);
-
-    if (refused) {
-        fprintf(stderr,
-                "mss_dump: REFUSE: coprocessor/enhancement keys present "
-                "(chip firewall)\n");
-        return 2;
+    int rc = 0;
+    if (extract) {
+        if (dump_records(payload, payload_size, extract) < 0) {
+            fprintf(stderr, "mss_dump: key not found: %s\n", extract);
+            rc = 3;
+        }
+    } else if (!header_only) {
+        rc = dump_records(payload, payload_size, NULL);
+        if (rc) {
+            fprintf(stderr,
+                    "mss_dump: REFUSE: coprocessor/enhancement keys "
+                    "present (chip firewall)\n");
+            rc = 2;
+        }
     }
-    return 0;
+    free(payload);
+    return rc;
 }

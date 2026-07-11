@@ -141,5 +141,65 @@ rc=0
 "$BST" >/dev/null 2>&1 || rc=$?
 assert_eq "bst usage error exit" "1" "$rc"
 
+# --- REAL-file oracle: StateProbe beacon capture (Mesen2 2.1.1) ---
+# tests/fixtures/transmute/stateprobe/ — emulator-produced fixture; see
+# its README. Asserts on decoded content only, never fixture bytes.
+SP="$TESTS_DIR/fixtures/transmute/stateprobe"
+
+# identity discipline (H7): the committed ROM must hash to a value the
+# manifest declares
+rom_hash="$(sha256sum "$SP/stateprobe.sfc" | cut -d' ' -f1)"
+if grep -q "$rom_hash" "$SP/stateprobe_manifest.json"; then
+    passed=$((passed + 1))
+else
+    printf 'FAIL: stateprobe.sfc sha256 %s not found in manifest\n' \
+        "$rom_hash" >&2
+    failed=$((failed + 1))
+fi
+
+rc=0
+"$MSS" "$SP/beacon_gen2.mss" >"$TEST_TMPDIR/real1.out" 2>&1 || rc=$?
+assert_eq "real mss exit code" "0" "$rc"
+assert_eq "real mss emu version (2.1.1 = pin)" "mss.emu_version = 131329" \
+    "$(grep '^mss.emu_version' "$TEST_TMPDIR/real1.out")"
+assert_eq "real mss console type" "mss.console_type = 0" \
+    "$(grep '^mss.console_type' "$TEST_TMPDIR/real1.out")"
+assert_eq "real mss record count" "1344" \
+    "$(grep -c '	' "$TEST_TMPDIR/real1.out")"
+assert_eq "real mss SPC at instruction boundary (quiescent rule)" \
+    "spc.opStep	1	0x0	0" \
+    "$(grep '^spc.opStep	' "$TEST_TMPDIR/real1.out")"
+assert_eq "real mss no in-flight port write (quiescent rule)" \
+    "spc.pendingCpuRegUpdate	1	0x0	0" \
+    "$(grep '^spc.pendingCpuRegUpdate	' "$TEST_TMPDIR/real1.out")"
+assert_eq "real mss sram size matches cart declaration" "8192" \
+    "$(grep '^cart.saveRam	' "$TEST_TMPDIR/real1.out" | cut -f2)"
+
+# RESULT_SCHEMA v1 block via extraction mode: magic at WRAM $7EF000
+# (offset 0xF000 = 61440), beacon $A5 at $7EF7F0 (offset 63472)
+"$MSS" -x memoryManager.workRam "$SP/beacon_gen2.mss" \
+    >"$TEST_TMPDIR/wram.bin" 2>/dev/null || true
+assert_eq "extracted wram size" "131072" \
+    "$(wc -c <"$TEST_TMPDIR/wram.bin" | tr -d ' ')"
+magic="$(dd if="$TEST_TMPDIR/wram.bin" bs=1 skip=61440 count=4 \
+    2>/dev/null)"
+assert_eq "result block magic in wram" "SPRB" "$magic"
+beacon="$(dd if="$TEST_TMPDIR/wram.bin" bs=1 skip=63472 count=1 \
+    2>/dev/null | od -An -tx1 | tr -d ' \n')"
+assert_eq "capture beacon byte" "a5" "$beacon"
+
+rc=0
+"$MSS" -x no.such.key "$SP/beacon_gen2.mss" >/dev/null 2>&1 || rc=$?
+assert_eq "extraction miss exit" "3" "$rc"
+
+# stability on the real file
+"$MSS" "$SP/beacon_gen2.mss" >"$TEST_TMPDIR/real2.out" 2>&1 || true
+if cmp -s "$TEST_TMPDIR/real1.out" "$TEST_TMPDIR/real2.out"; then
+    passed=$((passed + 1))
+else
+    printf 'FAIL: real-file dump not stable across runs\n' >&2
+    failed=$((failed + 1))
+fi
+
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

@@ -256,14 +256,14 @@ already proven by the s1-addendum capture); (3) controls C1–C3
 (4) donor capture + first `transmute_snes.c` decode pass against
 `beacon_gen2.mss`.
 
-**Session-2 closeout gates: PASSED** — `scripts/gate.sh full` 62/62
-both privilege passes + both shipped-artifact integrity checks before
-the first push (qemu checks skipped: no `qemu-aarch64-static` in the
-web container; checksums still verified); rerun after the fixture
-merge with the real-file test additions (see git history for the
-final run result on this branch). First s2 gate run failed 61/62 on
-the KNOWN flake below — reconfirmed passing in isolation (11/11),
-same protocol as session 1.
+**Session-2 closeout gates: PASSED twice** — `scripts/gate.sh full`
+62/62 both privilege passes + both shipped-artifact integrity checks,
+run before the first push AND rerun after the fixture merge with the
+real-file test additions (both green; qemu checks skipped: no
+`qemu-aarch64-static` in the web container; checksums still
+verified). One earlier s2 gate run failed 61/62 on the KNOWN flake
+below — reconfirmed passing in isolation (11/11), same protocol as
+session 1.
 
 **Pre-existing flake (from session 1, still open for a mainline
 session):** `tests/integration/test_retrodeck_events_flow.sh` Phase 1

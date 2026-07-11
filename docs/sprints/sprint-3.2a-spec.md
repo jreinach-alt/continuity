@@ -737,10 +737,13 @@ Open-Item precedent), don't fix it in-lane.
   from FRONTEND config — ES-DE parses passively from its
   shared-storage dir; Daijishō has NO local export (owner-verified;
   its backup is Google-Drive-only, unusable per the no-cloud-OAuth
-  tenet), so `daijisho_db_recon.sh` attempts direct SQLite extraction
-  (app-external storage → adb backup → root, schema-agnostic dump);
-  assessment + fixture asks on the issue; `thor_recon.sh` collects
-  the ES-DE evidence (frontend section + checklist M8).
+  tenet); `daijisho_db_recon.sh` attempted direct SQLite extraction
+  (app-external storage → adb backup → root, schema-agnostic dump) —
+  **all rungs closed on the stock Thor (owner-run 2026-07-11)**, so
+  Daijishō seeding replans to community platform JSONs + direct
+  observation (sync paths from our own scan; in-use cores from the
+  by-core saves tree). Full disposition on the issue; `thor_recon.sh`
+  collects the ES-DE evidence (frontend section + checklist M8).
 - State-archive retention policy for auto-increment users (issue
   #17) — 3.2a ships multi-digit coverage with the per-file cap only.
 - The core `boot_pull` unknown-path fix (issue #16) — the `.bak`

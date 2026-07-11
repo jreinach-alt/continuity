@@ -73,7 +73,7 @@ treated as **unverified hypothesis** until pinned:
 | H5 | bsnes's loader validates a version signature and field-stream length, not semantic invariants | determines whether "loads at all" (G2) is a format problem or a semantics problem |
 | H6 | A bsnes state serialized at power-on is a valid donor template: overwrite architectural fields, keep internal fields, and the loader accepts it | this is the encode strategy — synthesis FROM the target's own power-on + load path, exactly as the design doc mandates |
 | H7 | Mesen2's state embeds settings/ROM identity that must match at load; bsnes likewise per-version | pins what the codec must carry through vs regenerate |
-| H8 | Mesen2's InteropDLL exports save/load-state entry points usable headless (the UI calls them), so SuperForge's `MesenRunner` can gain state bindings with 2 small ctypes additions | the wrapper has every needed primitive EXCEPT state save/load today (verified 2026-07-11: zero state methods in the harness) |
+| H8 | ~~Mesen2's InteropDLL exports save/load-state entry points usable headless~~ **CONFIRMED 2026-07-11** — the StateProbe delivery added `save_state_file`/`load_state_file` to `MesenRunner` (upstream, in SuperForge) over the `SaveStateFile`/`LoadStateFile` InteropDLL exports; exercised by StateProbe gate 3 (save → run past → load → epoch rewind observed → 2 further all-green audit passes) | P1's source-side state bindings are DONE before the spike starts |
 
 P0 ends with each hypothesis marked CONFIRMED/REFUTED with file/line
 citations into the vendored source. A refuted H2/H6 is an early
@@ -193,6 +193,22 @@ Games do not vanish: a synthetic ROM is a *model* of fragile game
 code, not the population of it. The commercial corpus shrinks from
 primary evidence (10 games) to an **ecological-validity confirmation
 sample (3 games)**.
+
+**Delivery status (2026-07-11):** StateProbe **v0 delivered** on
+SuperForge branch `claude/stateprobe-diagnostic-rom-em6jh2` (final
+commit `de79be4`) and review-verified by this spike's orchestrator:
+RESULT_SCHEMA v1 byte-exact at the brief's addresses (NMI-only block
+writes ⇒ untorn mid-frame reads), byte-reproducible build (committed
+ROM = container rebuild = manifest sha256), hardware quirks encoded
+from ground truth (VRAM prefetch dummy read, CGRAM bit-15 mask, RDDIV
+clobber, IPL kick residue), honest blind-spot register (domains 4/5/6
+gray until v2; ARAM `$F0-$FF` unreachable; PPU version bits
+unasserted). Verification gates 1–6 (incl. determinism, same-core
+round-trip = control C2, sabotage sensitivity = control C3) green in
+the SuperForge session AND independently re-run by this spike. Two
+review findings (a vacuous gate-2 skew branch; a control-page doc
+mismatch) fixed in `de79be4`. v1–v3 hazard profiles remain staged
+work; profile plumbing is in place.
 
 ### Verification: behavioral, with controls
 
@@ -378,10 +394,12 @@ stands: the final handoff must not regress the mainline suite.
    session environment? Tier 1 (StateProbe) is fully self-contained,
    so this now only affects 3 games. (Nothing commercial is ever
    committed.)
-7. **StateProbe brief sign-off** — approve
-   `docs/sprints/spike-t2.0-stateprobe-brief.md` (staged v0–v3 scope,
-   RESULT_SCHEMA v1 addresses, license choice for the ROM) before
-   handing it to a SuperForge session; v0 wanted by P2.
+7. ~~StateProbe brief sign-off~~ **RESOLVED (2026-07-11): brief
+   executed** — v0 delivered (`de79be4`, CC0-1.0), review-verified,
+   gates green in both repos' hands. See §Primary instrument delivery
+   status. Remaining v1–v3 hazard profiles are follow-on SuperForge
+   sprints, scheduled at owner discretion (v1 latch hazards is the
+   next most valuable for G4).
 
 ## Reference specs
 

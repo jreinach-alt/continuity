@@ -97,8 +97,23 @@ the spec itself, owner-visible.)
 Session 1 (2026-07-11) covered: spec authored + approved; StateProbe
 brief authored; StateProbe v0 delivered by SuperForge and
 review-verified here (17/17 gates, independent rerun); reference pins;
-container-format archaeology (ledger above). Session closeout gate:
-result appended at the end of this section when the run completes.
+container-format archaeology (ledger above).
+
+**Session closeout gate: PASSED** — `scripts/gate.sh full`, 61/61 both
+privilege passes + both shipped-artifact integrity checks (qemu checks
+skipped: no `qemu-aarch64-static` in the web container; checksums
+still verified). First run failed 60/61 on a PRE-EXISTING flake,
+handed off below.
+
+**Defect handed off (pre-existing, NOT spike fallout):**
+`tests/integration/test_retrodeck_events_flow.sh` Phase 1
+("event-driven sync reached the remote", expected 0 actual 1) fails
+intermittently under full-suite load — observed twice this session in
+gate runs, passes in isolation every time (3× reconfirmed, 11/11).
+Scope: Sprint 2.2 RetroDeck event daemon test, untouched by this
+spike (docs + `tools/transmute/` only). Likely a timing assumption in
+the event-wake phase under CPU contention; owner/next mainline session
+should harden the test's wait window.
 
 **Startup:** standard protocol (CLAUDE.md Steps 1–6 → this file), then
 `sh tools/transmute/fetch_refs.sh` (re-fetches vendor trees in a fresh

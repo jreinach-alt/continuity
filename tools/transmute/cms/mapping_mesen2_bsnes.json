@@ -275,7 +275,7 @@
       "cite": "bsnes:bsnes/sfc/dsp/serialization.cpp:1-28; blob layout sfc/dsp/SPC_DSP.cpp:949-1016 (copy_state), copier semantics SPC_DSP.cpp:905-946 + SPC_DSP.h:289-304",
       "fields": [
         { "path": "dsp.apuram", "bytes": 65536, "class": "architectural", "cms": "aram.data" },
-        { "path": "dsp.samplebuffer", "bytes": 1024, "class": "emulator_internal", "synthesis": "donor (8192? — nall array of int; exact byte count = element count x width pinned by dry-run in P1; output resampler FIFO either way)" },
+        { "path": "dsp.samplebuffer", "bytes": 16384, "class": "emulator_internal", "synthesis": "donor (int16 samplebuffer[8192], sfc/dsp/dsp.hpp:22 — output FIFO)" },
         { "path": "dsp.clock", "bytes": 8, "class": "emulator_internal", "synthesis": "donor (DSP<->SMP tick phase; pairs with smp.io.dspCounter)" },
         { "path": "dsp.spc_dsp_blob", "bytes": 640, "class": "architectural (514 meaningful bytes; zero-padded to state_size=640)", "cms": "dsp_regs + dsp_internal", "transform": "blargg copy_state order: regs[128]; per-voice x8: brr_buf[12]xi16, interp_pos u16, brr_addr u16, env u16, hidden_env i16, buf_pos u8, brr_offset u8, kon_delay u8, env_mode u8, t_envx_out u8, extra(1 zero byte); echo_hist[8][2]xi16; every_other_sample u8, kon u8, noise u16, counter u16, echo_offset u16, echo_length u16, phase u8, new_kon u8, endx_buf u8, envx_buf u8, outx_buf u8, t_pmon u8, t_non u8, t_eon u8, t_dir u8, t_koff u8, t_brr_next_addr u16, t_adsr0 u8, t_brr_header u8, t_brr_byte u8, t_srcn u8, t_esa u8, t_echo_enabled u8, t_main_out[2]xi16, t_echo_out[2]xi16, t_echo_in[2]xi16, t_dir_addr u16, t_pitch u16, t_output i16, t_echo_ptr u16, t_looped u8, extra(1 zero byte). All multi-byte LE (copy_int via SET_LE16)."
         }
@@ -504,7 +504,6 @@
     "bsnes io.irqEnable composite semantics vs Mesen2 enableH/V (donor-check)",
     "interrupt truth table finalization (StateProbe v3)",
     "Thread.clock donor values: confirm runToSave parks all threads at clock offsets the donor reproduces (C4 isolates)",
-    "bsnes dsp.samplebuffer serialized byte count (nall array<int> width) — pin via serializeInit dry-run delta in P1 harness",
     "fast-PPU io.oamAddress/oamBaseAddress live-vs-reload split vs Mesen2 oamRamAddress/InternalOamAddress"
   ]
 }

@@ -18,10 +18,18 @@ product's sync code (`src/**` is untouched by this spike).
 | `fetch_refs.sh` | pins + fetches both emulator source trees into `vendor/` |
 | `vendor/mesen2`, `vendor/bsnes` | vendored reference sources (gitignored; ~70 MB) |
 | `build/` | local build outputs (gitignored) |
-| `cms/` | CMS-SNES v1 schema + field mapping tables (committed; P0 exit artifact) |
-| `mss_dump.c`, `bst_dump.c` | state → field-inventory decode oracles (P0) |
+| `cms/cms_snes_v1.json` | CMS-SNES v1 schema — architectural state only, per-field classification (P0 exit artifact) |
+| `cms/mapping_mesen2_bsnes.json` | complete both-sides field inventory + CMS correspondence + transforms + refuse rules (P0 exit artifact) |
+| `mss_dump.c` | Mesen2 `.mss` decode oracle: container + keyed records, chip firewall (`cc -O2 mss_dump.c -lz`) |
+| `bst_dump.c` | bsnes `.bst` decode oracle: container + RLE + exact positional plain-cart walk, fastPPU layout (`cc -O2 bst_dump.c -lz`) |
+| `gen_fixtures.py` | deterministic synthetic container fixtures → `tests/fixtures/transmute/` (+ sha256 manifest) |
 | `transmute_snes.c` | decode → CMS → donor-encode pipeline (P2) |
 | `harness/` | capture/verify drivers (P1) |
+
+Tests: `tests/unit/transmute/test_dumpers.sh` (compiles the dumpers,
+runs them over the committed fixtures; container/codec/gate/refuse
+coverage). Semantic oracle fixtures (StateProbe beacon captures) land
+with the SuperForge import in P1.
 
 ## Pins
 

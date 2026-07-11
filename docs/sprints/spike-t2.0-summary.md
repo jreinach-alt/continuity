@@ -91,3 +91,64 @@ u32 `0x5A220000` + u32 rleStateSize + u32 rlePreviewSize +
 
 None. (Star Fox corpus re-slotting is recorded as a Q3 resolution in
 the spec itself, owner-visible.)
+
+## Session handoff — brief for the next session (P0 completion)
+
+Session 1 (2026-07-11) covered: spec authored + approved; StateProbe
+brief authored; StateProbe v0 delivered by SuperForge and
+review-verified here (17/17 gates, independent rerun); reference pins;
+container-format archaeology (ledger above). Session closeout gate:
+result appended at the end of this section when the run completes.
+
+**Startup:** standard protocol (CLAUDE.md Steps 1–6 → this file), then
+`sh tools/transmute/fetch_refs.sh` (re-fetches vendor trees in a fresh
+container, ~2 min). Gate posture: owner disabled the pre-push hook for
+spike sessions (spec §Gate posture) — re-disable with
+`git config --local --unset core.hooksPath` after Startup Step 2
+re-enables it, or leave it on (spike pushes are docs + isolated tools;
+the fast gate passes). Model regimen: this spike is Fable-class
+(CLAUDE.md §Model Regimen — emulation/binary internals); the CMS
+field-classification judgments are exactly where that matters.
+
+**Task order (P0 remainder — Open Items above, expanded):**
+
+1. **Field inventory → `cms/` mapping tables.** Walk every state
+   field on both sides and classify architectural / emulator-internal
+   / ambiguous-with-rule (spec §Decomposition target). Where to read:
+   - Mesen2 (keyed — record key names): `Core/SNES/*.cpp` `Serialize`
+     methods — `SnesConsole`, `SnesCpu`, `SnesPpu`, `Spc`, `NecDsp`n/a,
+     `SnesDmaController`, `InternalRegisters`, `AluMulDiv`,
+     `SnesControlManager` + `Input/`, `BaseCartridge`, `Core/SNES/DSP`
+     (audio DSP), memory manager. Grep `void .*::Serialize` under
+     `Core/SNES/`.
+   - bsnes (positional — record exact code order):
+     `sfc/{cpu,smp,dsp,cartridge,controller,expansion,memory}/serialization.cpp`,
+     `sfc/ppu/serialization.cpp` AND `sfc/ppu-fast/serialization.cpp`
+     (fastPPU flag selects the layout — pin the default first, Open
+     Item 4), plus `random` (first block) from `sfc/system/`.
+   - Output: `cms/cms_snes_v1.json` + `cms/mapping_mesen2_bsnes.json`
+     (spec file table). Every CMS field: mesen2 key ↔ bsnes stream
+     position/width ↔ transform ↔ classification ↔ fullsnes citation
+     for semantics (SuperForge `docs/reference/fullsnes.txt`).
+2. **`mss_dump` + `bst_dump`** (C, zlib for mss; RLE<1> codec for bst
+   — trivial, pin from `nall/encode/rle.hpp`) + unit tests under
+   `tests/unit/transmute/` against StateProbe fixtures.
+3. **Import StateProbe fixtures** from SuperForge branch
+   `claude/stateprobe-diagnostic-rom-em6jh2` @ `de79be4`
+   (`stateprobe.sfc`, manifest, genconfig; capture a beacon `.mss`
+   via MesenRunner) into `tests/fixtures/transmute/`. SuperForge-side
+   merge of that branch is the owner's call and does not block (pin
+   the commit).
+4. **MesenCore.so pin check** (Open Item 3) — compare its version
+   exports against the pin; rebuild via SuperForge
+   `scripts/build_mesen2.sh` if drifted.
+5. Small pins: bsnes `hacks.fastPPU` default + `runToSave`
+   Fast/Strict; Mesen2 capture suspension point (H3).
+
+**P0 exit = G0:** both formats fully inventoried, mapping table
+committed, dumpers green over fixtures, no structural blocker found —
+then owner check-in before P1 (bsnes headless runner is the P1
+critical path).
+
+**Owner loose ends:** third Tier-2 pass-game pick; SuperForge
+StateProbe branch merge (at leisure).

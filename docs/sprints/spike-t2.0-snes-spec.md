@@ -1,7 +1,9 @@
 # Spike T2.0 — SNES Cross-Core State Transmutation: Rule It In or Out
 
-**Status:** DRAFT — pending owner approval. No implementation until
-approved (project methodology).
+**Status:** APPROVED 2026-07-11 (owner: "Spec is good") — P0 underway.
+Approval adopts the in-spec recommendations for open questions 2
+(bsnes-emu/bsnes master, pinned at P0) and 5 (6-session cap); Q6
+(Tier-2 run location) stays open until P3.
 **Type:** Research spike, transmutation tier (numbered outside platform
 phases; "T2" = the cross-emulator tier defined in
 `docs/design/state-transmutation.md`).
@@ -378,9 +380,15 @@ stands: the final handoff must not regress the mainline suite.
 2. **Which bsnes build?** Recommendation: **bsnes-emu/bsnes master**
    (the maintained v115 lineage), pinned at spike start. bsnes-hd and
    ares are out of scope. Confirm.
-3. **Confirmation-sample picks** — 3 games for Tier 2 (proposed: SMW +
-   one HiROM RPG + one audio/HDMA stresser; games where you know the
-   RAM map cold are worth double).
+3. **Confirmation-sample picks** — PARTIALLY RESOLVED (owner,
+   2026-07-11): **SMW** (plain LoROM) + **FF3 US / FF6** (plain HiROM)
+   confirmed. Owner also named Star Fox expecting chip coverage —
+   corrected: SuperFX is excluded by the chip firewall; **Star Fox is
+   slotted as the Tier-2 NEGATIVE CONTROL** instead (the pipeline must
+   detect the GSU cart and refuse loudly, leaving state untouched —
+   exercising the refuse-by-default rule against a real chip cart).
+   Still open: the third PASS-game (plain-cart audio/HDMA stresser —
+   candidates: Axelay, Super Castlevania IV, Tales of Phantasia JP).
 4. ~~SuperForge assets~~ **RESOLVED (2026-07-11): surveyed** — see
    §SuperForge assets (harness, fullsnes.txt, dpmap-derived probes,
    SuperForge ROMs as fixtures). Remaining sub-question: should the

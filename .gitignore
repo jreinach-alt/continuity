@@ -1,6 +1,11 @@
 # Build and release artifacts
 release/artifacts/
 
+# Spike T2.0 vendored emulator sources + local build outputs (never
+# committed; pinned + fetched by tools/transmute/fetch_refs.sh)
+tools/transmute/vendor/
+tools/transmute/build/
+
 # Ephemeral working artifacts (reviews, audits, scratch notes)
 work/
 

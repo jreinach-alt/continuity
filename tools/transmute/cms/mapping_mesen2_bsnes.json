@@ -1,0 +1,510 @@
+{
+  "_schema_version": 1,
+  "_comment": "Spike T2.0 P0 exit artifact: complete field inventory of both pilot state formats with per-field classification, plus the CMS-SNES v1 correspondence and transforms. Every byte-level claim cites path:line in the pinned vendored trees under tools/transmute/vendor/ — format truth is the cited source, never this file or memory. Direction of the pilot codec: DECODE Mesen2 .mss -> CMS; ENCODE CMS -> bsnes stream via power-on donor template (spec H6).",
+  "pins": {
+    "mesen2": "b9fa69ddc6d0a331fb103fdb5eef6904305703c2",
+    "bsnes": "7d5aa1e656b9171524d01b1b22917197d8121cb4",
+    "bsnes_serializer_version": "115.1",
+    "mesen2_file_format_version": 4,
+    "citation_convention": "tree:path:line[@range] where tree is mesen2|bsnes, path is repo-relative"
+  },
+  "containers": {
+    "mesen2_mss": {
+      "cite": "mesen2:Core/Shared/SaveStateManager.cpp:60-83,155-223",
+      "layout": [
+        { "field": "magic", "bytes": 3, "value": "MSS" },
+        { "field": "emu_version", "bytes": 4, "note": "u32 LE; load gate: must be <= running emulator version (SaveStateManager.cpp:169-172)" },
+        { "field": "format_version", "bytes": 4, "note": "u32 LE = 4 (SaveStateManager.h:23); load gate: >= 3" },
+        { "field": "console_type", "bytes": 4, "note": "u32 LE; Snes = 0 (SettingTypes.h:358-367); load gate: must match running console (or GB-family compat path)" },
+        { "field": "video_frame_size", "bytes": 4, "note": "u32 LE framebuffer byte count (SaveVideoData, SaveStateManager.cpp:115-129)" },
+        { "field": "video_width", "bytes": 4 },
+        { "field": "video_height", "bytes": 4 },
+        { "field": "video_scale_x100", "bytes": 4 },
+        { "field": "video_zlib_size", "bytes": 4, "note": "u32 LE; load caps 2 MB (GetVideoData)" },
+        { "field": "video_zlib_data", "bytes": "video_zlib_size", "note": "zlib-wrapped framebuffer; SKIP for decode purposes (emulator-internal)" },
+        { "field": "rom_name_len", "bytes": 4 },
+        { "field": "rom_name", "bytes": "rom_name_len", "note": "display filename; NOT validated on load (H7 REVISED: no ROM identity check in format v4; SHA1 existed only <= v3, SaveStateManager.cpp:180-200). Identity discipline is OURS: transmutation requires a sidecar manifest sha256 match" },
+        { "field": "payload", "bytes": "rest", "note": "Emulator::Serialize output, framing below" }
+      ]
+    },
+    "mesen2_payload_framing": {
+      "cite": "mesen2:Utilities/Serializer.cpp:64-146,207-230; Core/Shared/Emulator.cpp (Serialize; includeSettings=false for .mss states via SaveStateManager::SaveState:78-82)",
+      "layout": [
+        { "field": "is_compressed", "bytes": 1, "note": "1 for .mss (compressionLevel default 1, Emulator.h:187)" },
+        { "field": "raw_size", "bytes": 4, "note": "u32 LE; load cap 10 MB (Serializer.cpp:85-88); ABSENT when is_compressed=0 (raw records to EOF)" },
+        { "field": "zlib_size", "bytes": 4, "note": "u32 LE; same cap; absent when uncompressed" },
+        { "field": "zlib_data", "bytes": "zlib_size", "note": "zlib (compress2) of the record stream" }
+      ],
+      "record_format": {
+        "cite": "mesen2:Utilities/Serializer.h:255-266 (write), Serializer.cpp:108-146 (parse)",
+        "record": "[key: bytes in (0x20,0x7F) exclusive][0x00][u32 LE value_size][value bytes]",
+        "key_rules": "dot-joined prefixes; leading '_' and 'state.' stripped, leading uppercase run per segment lowercased, '[i]' suffix for indexed (Serializer.cpp:237-290)",
+        "load_semantics": "whole stream indexed into a key->value map; unknown keys tolerated silently; missing keys leave target field unchanged (Serializer.h:271-283). Multi-byte values LE (WriteValue, Serializer.h:104-113)"
+      }
+    },
+    "bsnes_bst": {
+      "cite": "bsnes:bsnes/target-bsnes/program/states.cpp:1,55-100",
+      "layout": [
+        { "field": "signature", "bytes": 4, "value": "0x5A220000 u32 LE" },
+        { "field": "rle_state_size", "bytes": 4, "note": "u32 LE byte length of the RLE<1> section" },
+        { "field": "rle_preview_size", "bytes": 4, "note": "u32 LE; 0 when no preview captured (states.cpp:84-91)" },
+        { "field": "rle_state", "bytes": "rle_state_size", "note": "nall Encode::RLE<1> of the serializer stream" },
+        { "field": "rle_preview", "bytes": "rle_preview_size", "note": "RLE<2> of 256x240 RGB555 preview; emulator-internal, skip" }
+      ],
+      "rle_codec": {
+        "cite": "bsnes:nall/encode/rle.hpp, nall/decode/rle.hpp (S=1, M=4)",
+        "format": "u64 LE decoded-size header, then packets: control<0x80 => (control+1) literal words follow; control>=0x80 => one word repeated ((control&0x7F)+M) times"
+      }
+    },
+    "bsnes_stream_header": {
+      "cite": "bsnes:bsnes/sfc/system/serialization.cpp:1-48",
+      "layout": [
+        { "field": "signature", "bytes": 4, "value": "0x31545342 ('BST1' LE)" },
+        { "field": "serialize_size", "bytes": 4, "note": "exact total stream size; load gate: must equal per-cartridge dry-run size (serialization.cpp:41,103-119)" },
+        { "field": "version", "bytes": 16, "value": "'115.1' NUL-padded; load gate: exact string match (emulator/emulator.hpp:38)" },
+        { "field": "description", "bytes": 512, "note": "free text, not validated" },
+        { "field": "synchronize", "bytes": 1, "note": "bool; UI/runner saves are always 1 (interface.hpp:61); =0 is the rewind variant carrying raw cothread stacks (serialization.cpp:90-97) — REFUSE on decode, never emit" },
+        { "field": "fastppu", "bytes": 1, "note": "bool; load gate: must match running configuration.hacks.ppu.fast (default TRUE, sfc/interface/configuration.hpp:38). Selects the PPU block layout below" }
+      ],
+      "load_behavior": "unserialize: 4 gates only (signature, exact size, version string, fastPPU flag) — no checksum, no ROM identity, no semantic validation; synchronize=1 causes power(reset=false) BEFORE the positional read (serialization.cpp:25-48). H5 CONFIRMED; H6 donor strategy rests on this power-cycle."
+    }
+  },
+  "bsnes_stream_blocks": {
+    "_comment": "serializeAll order (bsnes:bsnes/sfc/system/serialization.cpp:52-98). Plain LoROM/HiROM cart => NO coprocessor blocks; controllerPort1/2 + expansionPort serialize ZERO bytes (sfc/controller/controller.cpp:60-61, sfc/expansion/expansion.cpp:36-37). Integer encoding: LE at sizeof(underlying type); nall Natural<N>/Integer<N> serialize at their utype width 1/2/4/8 (nall/serializer.hpp:85-125, nall/primitives/natural.hpp:8-13); bool and nall boolean = 1 byte.",
+    "block_order_plain_cart": ["random", "cartridge", "cpu", "smp", "ppu", "dsp"],
+    "coprocessor_blocks_refused": "ICD MCC DIP Event SA1 SuperFX ARMDSP HitachiDSP NECDSP EpsonRTC SharpRTC SPC7110 SDD1 OBC1 MSU1 Cx4 DSP1 DSP2 DSP4 ST0010 BSMemory SufamiTurboA/B — presence keyed off cartridge.has.* (serialization.cpp:60-84); our encoder targets plain carts only, and cart RAM size mismatch fails the exact-size gate anyway",
+    "random": {
+      "cite": "bsnes:bsnes/emulator/random.hpp (serialize)",
+      "fields": [
+        { "path": "random.entropy", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (entropy setting enum; default Low)" },
+        { "path": "random.state", "bytes": 8, "class": "emulator_internal", "synthesis": "donor (PCG state; only affects future power-on randomization, no gameplay effect post-boot)" },
+        { "path": "random.increment", "bytes": 8, "class": "emulator_internal", "synthesis": "donor" }
+      ]
+    },
+    "cartridge": {
+      "cite": "bsnes:bsnes/sfc/cartridge/serialization.cpp:1-3",
+      "fields": [
+        { "path": "cartridge.ram", "bytes": "cart_declared_sram_size", "class": "architectural", "cms": "sram.data" }
+      ]
+    },
+    "cpu": {
+      "cite": "bsnes:bsnes/sfc/cpu/serialization.cpp:1-107; widths from sfc/cpu/cpu.hpp:83-260, processor/wdc65816/wdc65816.hpp:25-289, sfc/sfc.hpp:77-125, sfc/ppu/counter/serialization.cpp",
+      "fields": [
+        { "path": "cpu.wdc.pc", "bytes": 4, "class": "architectural", "cms": "cpu.pbr+cpu.pc", "transform": "u24: (pbr<<16)|pc" },
+        { "path": "cpu.wdc.a", "bytes": 2, "class": "architectural", "cms": "cpu.a" },
+        { "path": "cpu.wdc.x", "bytes": 2, "class": "architectural", "cms": "cpu.x" },
+        { "path": "cpu.wdc.y", "bytes": 2, "class": "architectural", "cms": "cpu.y" },
+        { "path": "cpu.wdc.z", "bytes": 2, "class": "emulator_internal", "synthesis": "constant 0 (WDC65816 zero register, an emulator implementation artifact)" },
+        { "path": "cpu.wdc.s", "bytes": 2, "class": "architectural", "cms": "cpu.sp" },
+        { "path": "cpu.wdc.d", "bytes": 2, "class": "architectural", "cms": "cpu.d" },
+        { "path": "cpu.wdc.b", "bytes": 1, "class": "architectural", "cms": "cpu.dbr" },
+        { "path": "cpu.wdc.p.c|z|i|d|x|m|v|n", "bytes": 8, "class": "architectural", "cms": "cpu.p", "transform": "unpack NVMXDIZC byte to 8 bool bytes in stream order c,z,i,d,x,m,v,n" },
+        { "path": "cpu.wdc.e", "bytes": 1, "class": "architectural", "cms": "cpu.emulation_flag" },
+        { "path": "cpu.wdc.irq", "bytes": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state", "rule": "IRQ pin level; see interrupt_truth_table" },
+        { "path": "cpu.wdc.wai", "bytes": 1, "class": "architectural", "cms": "cpu.wai" },
+        { "path": "cpu.wdc.stp", "bytes": 1, "class": "architectural", "cms": "cpu.stp" },
+        { "path": "cpu.wdc.vector", "bytes": 2, "class": "emulator_internal", "synthesis": "donor (last-taken interrupt vector address; consumed only mid-interrupt-dispatch, impossible at instruction-boundary capture)" },
+        { "path": "cpu.wdc.mar", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (mid-instruction memory address register)" },
+        { "path": "cpu.wdc.mdr", "bytes": 1, "class": "architectural", "cms": "cpu.mdr" },
+        { "path": "cpu.wdc.u|v|w", "bytes": 12, "class": "emulator_internal", "synthesis": "donor (mid-instruction temporaries; dead at instruction boundary)" },
+        { "path": "cpu.thread.frequency", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (region-derived constant)" },
+        { "path": "cpu.thread.clock", "bytes": 8, "class": "emulator_internal", "synthesis": "donor + timing-domain alignment rule: relative scheduler offset; P2 sets from donor then verifies live-injection equivalence (control C4 isolates any error to semantics vs format)" },
+        { "path": "cpu.ppucounter.time.interlace", "bytes": 1, "class": "architectural", "cms": "ppu.setini(interlace bit) via timing", "transform": "copy" },
+        { "path": "cpu.ppucounter.time.field", "bytes": 1, "class": "architectural", "cms": "timing.interlace_field" },
+        { "path": "cpu.ppucounter.time.vperiod", "bytes": 4, "class": "emulator_internal", "synthesis": "recompute from region+interlace (scanlines this frame)" },
+        { "path": "cpu.ppucounter.time.hperiod", "bytes": 4, "class": "emulator_internal", "synthesis": "recompute from region (1364)" },
+        { "path": "cpu.ppucounter.time.vcounter", "bytes": 4, "class": "architectural", "cms": "timing.vcounter" },
+        { "path": "cpu.ppucounter.time.hcounter", "bytes": 4, "class": "architectural", "cms": "timing.hclock" },
+        { "path": "cpu.ppucounter.last.vperiod", "bytes": 4, "class": "emulator_internal", "synthesis": "recompute (= time.vperiod at steady state)" },
+        { "path": "cpu.ppucounter.last.hperiod", "bytes": 4, "class": "emulator_internal", "synthesis": "recompute" },
+        { "path": "cpu.wram", "bytes": 131072, "class": "architectural", "cms": "wram.data" },
+        { "path": "cpu.version", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (CPU chip version 2)" },
+        { "path": "cpu.counter.cpu", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (debug cycle counters)" },
+        { "path": "cpu.counter.dma", "bytes": 4, "class": "emulator_internal", "synthesis": "donor" },
+        { "path": "cpu.status.clockCount", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (current bus-cycle length bookkeeping)" },
+        { "path": "cpu.status.irqLock", "bytes": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state", "rule": "one-instruction IRQ suppression after specific ops; quiescent captures: false" },
+        { "path": "cpu.status.dramRefreshPosition", "bytes": 4, "class": "ambiguous_with_rule", "cms": "-", "rule": "per-scanline refresh slot (~538); synthesize from timing domain; both models agree at frame-edge captures" },
+        { "path": "cpu.status.dramRefresh", "bytes": 4, "class": "ambiguous_with_rule", "cms": "-", "rule": "0/1/2 state machine; synthesize: 0 if hclock<position else 2 (refresh done)" },
+        { "path": "cpu.status.hdmaSetupPosition", "bytes": 4, "class": "emulator_internal", "synthesis": "recompute from timing (per-line event bookkeeping)" },
+        { "path": "cpu.status.hdmaSetupTriggered", "bytes": 1, "class": "emulator_internal", "synthesis": "recompute from timing" },
+        { "path": "cpu.status.hdmaPosition", "bytes": 4, "class": "emulator_internal", "synthesis": "recompute from timing" },
+        { "path": "cpu.status.hdmaTriggered", "bytes": 1, "class": "emulator_internal", "synthesis": "recompute from timing" },
+        { "path": "cpu.status.nmiValid|nmiLine|nmiTransition|nmiPending|nmiHold", "bytes": 5, "class": "ambiguous_with_rule", "cms": "cpu_io.nmi_line_state + cpu_io.rdnmi_flag", "rule": "see interrupt_truth_table" },
+        { "path": "cpu.status.irqValid|irqLine|irqTransition|irqPending|irqHold", "bytes": 5, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state + cpu_io.timeup_flag", "rule": "see interrupt_truth_table" },
+        { "path": "cpu.status.resetPending", "bytes": 1, "class": "emulator_internal", "synthesis": "constant 0" },
+        { "path": "cpu.status.interruptPending", "bytes": 1, "class": "ambiguous_with_rule", "cms": "cpu_io nmi/irq state", "rule": "derived OR of pending lines; recompute from truth table outputs" },
+        { "path": "cpu.status.dmaActive", "bytes": 1, "class": "ambiguous_with_rule", "cms": "dma.in_flight", "rule": "quiescent: 0" },
+        { "path": "cpu.status.dmaPending|hdmaPending|hdmaMode", "bytes": 3, "class": "ambiguous_with_rule", "cms": "cpu_io.mdmaen_pending + dma.in_flight", "rule": "quiescent: 0" },
+        { "path": "cpu.status.autoJoypadCounter", "bytes": 4, "class": "ambiguous_with_rule", "cms": "cpu_io.autojoy_state", "rule": "33=inactive (cpu.hpp:118); quiescent captures park outside auto-read window => 33" },
+        { "path": "cpu.status.autoJoypadPort1", "bytes": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.autojoy_state", "rule": "2-bit port shift latch; quiescent: 0" },
+        { "path": "cpu.status.autoJoypadPort2", "bytes": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.autojoy_state", "rule": "quiescent: 0" },
+        { "path": "cpu.status.cpuLatch", "bytes": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.autojoy_state", "rule": "manual controller strobe line ($4016 bit0); architectural-real: copy from Mesen2 controlManager strobe" },
+        { "path": "cpu.status.autoJoypadLatch", "bytes": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.autojoy_state", "rule": "auto-read strobe; quiescent: 0" },
+        { "path": "cpu.io.wramAddress", "bytes": 4, "class": "architectural", "cms": "cpu_io.wram_port_addr", "transform": "u17 in u32 slot" },
+        { "path": "cpu.io.hirqEnable|virqEnable|irqEnable|nmiEnable|autoJoypadPoll", "bytes": 5, "class": "architectural", "cms": "cpu_io.nmitimen", "transform": "unpack $4200: bit4->hirq, bit5->virq (bsnes irqEnable is h&v combined semantics: hirq|virq stored separately + irqEnable — MAP: hirqEnable=bit4, virqEnable=bit5, irqEnable=0 donor-checked in P2, nmiEnable=bit7, autoJoypadPoll=bit0)" },
+        { "path": "cpu.io.pio", "bytes": 1, "class": "architectural", "cms": "cpu_io.wrio" },
+        { "path": "cpu.io.wrmpya", "bytes": 1, "class": "architectural", "cms": "cpu_io.wrmpya" },
+        { "path": "cpu.io.wrmpyb", "bytes": 1, "class": "architectural", "cms": "cpu_io.wrmpyb" },
+        { "path": "cpu.io.wrdiva", "bytes": 2, "class": "architectural", "cms": "cpu_io.wrdiva" },
+        { "path": "cpu.io.wrdivb", "bytes": 1, "class": "architectural", "cms": "cpu_io.wrdivb" },
+        { "path": "cpu.io.htime", "bytes": 2, "class": "architectural", "cms": "cpu_io.htime", "transform": "bsnes stores (dot+1)<<2 master-clock comparator (sfc/cpu/io.cpp:204-215); CMS stores raw dot; encode: (cms+1)<<2" },
+        { "path": "cpu.io.vtime", "bytes": 2, "class": "architectural", "cms": "cpu_io.vtime" },
+        { "path": "cpu.io.fastROM", "bytes": 1, "class": "architectural", "cms": "cpu_io.memsel_fastrom" },
+        { "path": "cpu.io.rddiv", "bytes": 2, "class": "architectural", "cms": "cpu_io.rddiv" },
+        { "path": "cpu.io.rdmpy", "bytes": 2, "class": "architectural", "cms": "cpu_io.rdmpy" },
+        { "path": "cpu.io.joy1", "bytes": 2, "class": "architectural", "cms": "cpu_io.joy1" },
+        { "path": "cpu.io.joy2", "bytes": 2, "class": "architectural", "cms": "cpu_io.joy2" },
+        { "path": "cpu.io.joy3", "bytes": 2, "class": "architectural", "cms": "cpu_io.joy3" },
+        { "path": "cpu.io.joy4", "bytes": 2, "class": "architectural", "cms": "cpu_io.joy4" },
+        { "path": "cpu.alu.mpyctr", "bytes": 4, "class": "ambiguous_with_rule", "cms": "cpu_io.alu_in_flight", "rule": "in-flight multiply countdown; Mesen2 internalRegisters.aluMulDiv.multCounter maps directly (same iterative model); quiescent: 0" },
+        { "path": "cpu.alu.divctr", "bytes": 4, "class": "ambiguous_with_rule", "cms": "cpu_io.alu_in_flight", "rule": "as mpyctr, from divCounter" },
+        { "path": "cpu.alu.shift", "bytes": 4, "class": "ambiguous_with_rule", "cms": "cpu_io.alu_in_flight", "rule": "shift accumulator, maps from aluMulDiv.shift" },
+        { "path": "cpu.channels[8]", "bytes": 168, "class": "architectural", "cms": "dma.ch[8].*", "transform": "per-channel 21 bytes in serialization.cpp:88-107 order: dmaEnable(1) hdmaEnable(1) direction(1) indirect(1) unused(1) reverseTransfer(1) fixedTransfer(1) transferMode(1) targetAddress(1) sourceAddress(2) sourceBank(1) transferSize(2) indirectBank(1) hdmaAddress(2) lineCounter(1) unknown(1) hdmaCompleted(1) hdmaDoTransfer(1); $43x0 DMAP bit-mapping: direction=bit7, indirect=bit6, unused=bit5, reverseTransfer=bit4, fixedTransfer=bit3, transferMode=bits0-2" }
+      ]
+    },
+    "smp": {
+      "cite": "bsnes:bsnes/sfc/smp/serialization.cpp:1-55; widths sfc/smp/smp.hpp:24-91; SPC700 regs processor/spc700/serialization.cpp",
+      "fields": [
+        { "path": "smp.spc700.pc", "bytes": 2, "class": "architectural", "cms": "apu.spc700.pc" },
+        { "path": "smp.spc700.ya", "bytes": 2, "class": "architectural", "cms": "apu.spc700.a + apu.spc700.y", "transform": "ya.w = (y<<8)|a" },
+        { "path": "smp.spc700.x", "bytes": 1, "class": "architectural", "cms": "apu.spc700.x" },
+        { "path": "smp.spc700.s", "bytes": 1, "class": "architectural", "cms": "apu.spc700.sp" },
+        { "path": "smp.spc700.p.c|z|i|h|b|p|v|n", "bytes": 8, "class": "architectural", "cms": "apu.spc700.psw", "transform": "unpack NVPBHIZC byte to bool bytes in stream order c,z,i,h,b,p,v,n" },
+        { "path": "smp.spc700.wait", "bytes": 1, "class": "architectural", "cms": "apu.spc700.halt", "transform": "SLEEP state" },
+        { "path": "smp.spc700.stop", "bytes": 1, "class": "architectural", "cms": "apu.spc700.halt", "transform": "STOP state" },
+        { "path": "smp.thread.frequency", "bytes": 4, "class": "emulator_internal", "synthesis": "donor" },
+        { "path": "smp.thread.clock", "bytes": 8, "class": "emulator_internal", "synthesis": "donor + P2 alignment (CPU<->SMP relative phase; H4 primary hazard — StateProbe v2 measures tolerance)" },
+        { "path": "smp.io.clockCounter", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (SMP-internal cycle bookkeeping)" },
+        { "path": "smp.io.dspCounter", "bytes": 4, "class": "emulator_internal", "synthesis": "donor (SMP->DSP tick divider; pairs with dsp.clock)" },
+        { "path": "smp.io.apu0", "bytes": 1, "class": "architectural", "cms": "apu.port_to_cpu[0]" },
+        { "path": "smp.io.apu1", "bytes": 1, "class": "architectural", "cms": "apu.port_to_cpu[1]" },
+        { "path": "smp.io.apu2", "bytes": 1, "class": "architectural", "cms": "apu.port_to_cpu[2]" },
+        { "path": "smp.io.apu3", "bytes": 1, "class": "architectural", "cms": "apu.port_to_cpu[3]" },
+        { "path": "smp.io.timersDisable", "bytes": 1, "class": "architectural", "cms": "apu.test_f0", "transform": "$F0 bit0" },
+        { "path": "smp.io.ramWritable", "bytes": 1, "class": "architectural", "cms": "apu.test_f0", "transform": "$F0 bit1" },
+        { "path": "smp.io.ramDisable", "bytes": 1, "class": "architectural", "cms": "apu.test_f0", "transform": "$F0 bit2" },
+        { "path": "smp.io.timersEnable", "bytes": 1, "class": "architectural", "cms": "apu.test_f0", "transform": "$F0 bit3" },
+        { "path": "smp.io.externalWaitStates", "bytes": 1, "class": "architectural", "cms": "apu.test_f0", "transform": "$F0 bits4-5" },
+        { "path": "smp.io.internalWaitStates", "bytes": 1, "class": "architectural", "cms": "apu.test_f0", "transform": "$F0 bits6-7" },
+        { "path": "smp.io.iplromEnable", "bytes": 1, "class": "architectural", "cms": "apu.ipl_rom_enable" },
+        { "path": "smp.io.dspAddr", "bytes": 1, "class": "architectural", "cms": "apu.dsp_addr_f2" },
+        { "path": "smp.io.cpu0", "bytes": 1, "class": "architectural", "cms": "apu.port_from_cpu[0]" },
+        { "path": "smp.io.cpu1", "bytes": 1, "class": "architectural", "cms": "apu.port_from_cpu[1]" },
+        { "path": "smp.io.cpu2", "bytes": 1, "class": "architectural", "cms": "apu.port_from_cpu[2]" },
+        { "path": "smp.io.cpu3", "bytes": 1, "class": "architectural", "cms": "apu.port_from_cpu[3]" },
+        { "path": "smp.io.aux4", "bytes": 1, "class": "architectural", "cms": "apu.aux_f8_f9[0]" },
+        { "path": "smp.io.aux5", "bytes": 1, "class": "architectural", "cms": "apu.aux_f8_f9[1]" },
+        { "path": "smp.timer0|1|2 (stage0,stage1,stage2,stage3,line,enable,target)", "bytes": 24, "class": "architectural", "cms": "apu.timer[n].*", "transform": "per-timer 8 bytes: stage0(1) stage1(1) stage2(1) stage3(1,u4) line(1) enable(1) target(1)... NOTE stream order per smp/serialization.cpp:31-53 is stage0,stage1,stage2,stage3,line,enable,target = 7 fields/timer; stage3 = 4-bit output counter (read-to-clear $FD-FF -> CMS apu.timer[n].output); Mesen2 equivalents: timerN.stage0/prevStage1/stage1(?)/output/target/enabled/timersEnabled — exact stage-name correspondence pinned in P2 against both step functions; both model the same divider chain" }
+      ]
+    },
+    "ppu_fastppu_true": {
+      "cite": "bsnes:bsnes/sfc/ppu/serialization.cpp:1-8 (display prefix + dispatch) + sfc/ppu-fast/serialization.cpp:1-166; widths sfc/ppu-fast/ppu.hpp:10-290",
+      "_comment": "DEFAULT and encode-target layout (hacks.ppu.fast=true). Stream = 3 display ints, then ppufast fields.",
+      "fields": [
+        { "path": "ppu.display.interlace", "bytes": 1, "class": "emulator_internal", "synthesis": "recompute from ppu.setini interlace bit" },
+        { "path": "ppu.display.overscan", "bytes": 1, "class": "emulator_internal", "synthesis": "recompute from ppu.setini overscan bit" },
+        { "path": "ppu.display.vdisp", "bytes": 4, "class": "emulator_internal", "synthesis": "recompute: overscan? 240:225" },
+        { "path": "ppufast.thread.frequency", "bytes": 4, "class": "emulator_internal", "synthesis": "donor" },
+        { "path": "ppufast.thread.clock", "bytes": 8, "class": "emulator_internal", "synthesis": "donor + P2 alignment" },
+        { "path": "ppufast.ppucounter.time+last", "bytes": 26, "class": "mixed", "synthesis": "same as cpu.ppucounter: vcounter/hcounter/field from timing domain, periods recomputed", "note": "PPU-side counter runs at its own thread position; P2 pins whether donor parks both counters equal (runToSave semantics suggest yes at sync point)" },
+        { "path": "ppufast.latch.interlace|overscan|hires|hd|ss", "bytes": 5, "class": "emulator_internal", "synthesis": "recompute from io fields (per-frame render latches)" },
+        { "path": "ppufast.latch.vram", "bytes": 2, "class": "architectural", "cms": "ppu.vram_prefetch" },
+        { "path": "ppufast.latch.oam", "bytes": 1, "class": "architectural", "cms": "ppu.oam_write_buffer" },
+        { "path": "ppufast.latch.cgram", "bytes": 1, "class": "architectural", "cms": "ppu.cgram_write_buffer" },
+        { "path": "ppufast.latch.oamAddress", "bytes": 2, "class": "architectural", "cms": "ppu.oam_internal_addr" },
+        { "path": "ppufast.latch.cgramAddress", "bytes": 1, "class": "architectural", "cms": "ppu.cgadd (address half)" },
+        { "path": "ppufast.latch.mode7", "bytes": 1, "class": "architectural", "cms": "ppu.m7_latch" },
+        { "path": "ppufast.latch.counters", "bytes": 1, "class": "architectural", "cms": "ppu.hv_latch_flag" },
+        { "path": "ppufast.latch.hcounter", "bytes": 1, "class": "architectural", "cms": "ppu.ophct_toggle" },
+        { "path": "ppufast.latch.vcounter", "bytes": 1, "class": "architectural", "cms": "ppu.opvct_toggle" },
+        { "path": "ppufast.latch.ppu1.mdr", "bytes": 1, "class": "architectural", "cms": "ppu.ppu1_mdr" },
+        { "path": "ppufast.latch.ppu1.bgofs", "bytes": 1, "class": "architectural", "cms": "ppu.bgofs_latch_ppu1" },
+        { "path": "ppufast.latch.ppu2.mdr", "bytes": 1, "class": "architectural", "cms": "ppu.ppu2_mdr" },
+        { "path": "ppufast.latch.ppu2.bgofs", "bytes": 1, "class": "architectural", "cms": "ppu.bgofs_latch_ppu2" },
+        { "path": "ppufast.io.displayDisable", "bytes": 1, "class": "architectural", "cms": "ppu.inidisp (forced blank)" },
+        { "path": "ppufast.io.displayBrightness", "bytes": 1, "class": "architectural", "cms": "ppu.inidisp (brightness)" },
+        { "path": "ppufast.io.oamBaseAddress", "bytes": 2, "class": "architectural", "cms": "ppu.oamaddr_reload" },
+        { "path": "ppufast.io.oamAddress", "bytes": 2, "class": "architectural", "cms": "ppu.oam_internal_addr", "note": "fast PPU keeps reload in oamBaseAddress and live address here; accurate PPU splits differently — P2 pins the exact reload/live correspondence against write handlers" },
+        { "path": "ppufast.io.oamPriority", "bytes": 1, "class": "architectural", "cms": "ppu.oamaddr_reload (priority-rotate bit)" },
+        { "path": "ppufast.io.bgPriority", "bytes": 1, "class": "architectural", "cms": "ppu.bgmode (bg3 priority bit)" },
+        { "path": "ppufast.io.bgMode", "bytes": 1, "class": "architectural", "cms": "ppu.bgmode (mode bits)" },
+        { "path": "ppufast.io.vramIncrementMode", "bytes": 1, "class": "architectural", "cms": "ppu.vmain" },
+        { "path": "ppufast.io.vramMapping", "bytes": 1, "class": "architectural", "cms": "ppu.vmain" },
+        { "path": "ppufast.io.vramIncrementSize", "bytes": 1, "class": "architectural", "cms": "ppu.vmain", "note": "decoded to 1/32/128" },
+        { "path": "ppufast.io.vramAddress", "bytes": 2, "class": "architectural", "cms": "ppu.vram_addr" },
+        { "path": "ppufast.io.cgramAddress", "bytes": 1, "class": "architectural", "cms": "ppu.cgadd" },
+        { "path": "ppufast.io.cgramAddressLatch", "bytes": 1, "class": "architectural", "cms": "ppu.cgadd (hi/lo flag)" },
+        { "path": "ppufast.io.hcounter", "bytes": 2, "class": "architectural", "cms": "ppu.hv_latched_h" },
+        { "path": "ppufast.io.vcounter", "bytes": 2, "class": "architectural", "cms": "ppu.hv_latched_v" },
+        { "path": "ppufast.io.interlace", "bytes": 1, "class": "architectural", "cms": "ppu.setini" },
+        { "path": "ppufast.io.overscan", "bytes": 1, "class": "architectural", "cms": "ppu.setini" },
+        { "path": "ppufast.io.pseudoHires", "bytes": 1, "class": "architectural", "cms": "ppu.setini" },
+        { "path": "ppufast.io.extbg", "bytes": 1, "class": "architectural", "cms": "ppu.setini" },
+        { "path": "ppufast.io.mosaic.size", "bytes": 1, "class": "architectural", "cms": "ppu.mosaic" },
+        { "path": "ppufast.io.mosaic.counter", "bytes": 1, "class": "ambiguous_with_rule", "cms": "ppu.mosaic_vcounter", "rule": "row phase; frame-edge captures: recompute-safe" },
+        { "path": "ppufast.io.mode7.hflip|vflip", "bytes": 2, "class": "architectural", "cms": "ppu.m7sel" },
+        { "path": "ppufast.io.mode7.repeat", "bytes": 4, "class": "architectural", "cms": "ppu.m7sel" },
+        { "path": "ppufast.io.mode7.a|b|c|d|x|y", "bytes": 12, "class": "architectural", "cms": "ppu.m7_matrix + ppu.m7_center" },
+        { "path": "ppufast.io.mode7.hoffset|voffset", "bytes": 4, "class": "architectural", "cms": "ppu.m7_scroll" },
+        { "path": "ppufast.io.window.oneLeft|oneRight|twoLeft|twoRight", "bytes": 4, "class": "architectural", "cms": "ppu.wh0_3" },
+        { "path": "ppufast.io.bg1..bg4 (window 4+4+... + layer fields)", "bytes": "4x(7 window bytes: oneEnable,oneInvert,twoEnable,twoInvert,mask(4),aboveEnable,belowEnable = 10 bytes + aboveEnable,belowEnable,mosaicEnable,tiledataAddress(2),screenAddress(2),screenSize,tileSize,hoffset(2),voffset(2),tileMode,priority[2])", "class": "architectural", "cms": "ppu.w12sel/w34sel + ppu.tm_ts/tmw_tsw + ppu.mosaic + ppu.bg[4].*", "note": "WindowLayer.mask is uint (4 bytes) — sfc/ppu-fast/ppu.hpp:144; bg window enables map from W12SEL/W34SEL bits; per-bg above/below from TM/TS; tileMode recomputed from bgMode by encoder (updateVideoMode donor duplicate)" },
+        { "path": "ppufast.io.obj (window 10 + fields)", "bytes": "10 + aboveEnable,belowEnable,interlace,baseSize,nameselect,tiledataAddress(2),first,rangeOver,timeOver,priority[4]", "class": "architectural", "cms": "ppu.wobjsel + ppu.obsel + ppu.tm_ts + ppu.range_time_over + ppu.oamaddr_reload(first sprite)" },
+        { "path": "ppufast.io.col (window 4xbool+mask(4)+aboveMask(4)+belowMask(4) + enable[7] + directColor + blendMode + halve + mathMode + fixedColor(2))", "bytes": "26", "class": "architectural", "cms": "ppu.cgwsel + ppu.cgadsub + ppu.coldata", "note": "fixedColor is one u16 BGR; CMS coldata b/g/r 5-bit components pack into it" },
+        { "path": "ppufast.vram", "bytes": 65536, "class": "architectural", "cms": "vram.data" },
+        { "path": "ppufast.cgram", "bytes": 512, "class": "architectural", "cms": "cgram.data" },
+        { "path": "ppufast.objects[128] (x(2),y(1),character(1),nameselect(1),vflip(1),hflip(1),priority(1),palette(1),size(1))", "bytes": 1280, "class": "architectural", "cms": "oam.data", "transform": "OAM raw 544 bytes <-> 128 decoded objects: low-table 4 bytes/sprite (x low 8, y, character, attr byte: vflip<<7|hflip<<6|priority<<4|palette<<1|nameselect) + high-table 2 bits/sprite (size, x bit8). Exact bit packing pinned against ppu-fast/io.cpp oamWrite/oamRead in P2 (byte-level oracle: StateProbe OAM seed)" }
+      ],
+      "load_note": "Line::start/count reset on load (ppu-fast/serialization.cpp:11-12) — renderer queue is never carried"
+    },
+    "ppu_fastppu_false": {
+      "cite": "bsnes:bsnes/sfc/ppu/serialization.cpp:1-281",
+      "_comment": "Accurate-PPU layout, NOT the pilot encode target (default build runs fastPPU=true; our encoder emits fastPPU=true streams; the runner never produces accurate-layout states in the pipeline). Inventoried for completeness; bst_dump identifies it from the header flag and reports out-of-pilot-scope rather than mis-decoding.",
+      "field_groups": [
+        { "path": "ppu.thread + ppu.ppucounter", "class": "mixed", "note": "same treatment as fast side" },
+        { "path": "ppu.vram.mask(4) + ppu.vram.data(2*(mask+1))", "class": "architectural", "cms": "vram.data", "note": "mask 0x7FFF normally (io.cpp:70-72)" },
+        { "path": "ppu.ppu1.version|mdr, ppu.ppu2.version|mdr", "class": "architectural+internal", "cms": "ppu.ppu1_mdr/ppu2_mdr; versions donor (1/1..3)" },
+        { "path": "ppu.latch.* (13 fields, serialization.cpp:22-33)", "class": "architectural", "cms": "ppu.vram_prefetch, oam/cgram write buffers, bgofs latches, m7 latch, counter latch state, oam/cgram internal addresses" },
+        { "path": "ppu.io.* (serialization.cpp:35-74)", "class": "architectural", "cms": "ppu_regs domain (same register file as fast side, different layout/widths)" },
+        { "path": "ppu.mosaic + bg1..bg4 (io + output/mosaic/opt pipelines + 8-tile fetch queues + renderingIndex/pixelCounter, serialization.cpp:86-135)", "class": "architectural(io) + emulator_internal(pipelines)", "note": "mid-scanline fetch/output pipelines: donor-synthesized; io fields map to CMS bg[4]" },
+        { "path": "ppu.obj (oam.object[128] decoded + io + latch.firstSprite + t.item/t.tile evaluation state + output pipes, serialization.cpp:137-193)", "class": "architectural(oam.object+io) + emulator_internal(evaluation)", "cms": "oam.data + obsel/range/time" },
+        { "path": "ppu.window (io + output + x, serialization.cpp:195-253)", "class": "architectural(io) + emulator_internal(output,x)" },
+        { "path": "ppu.screen (cgram[256] + io + math pipeline, serialization.cpp:255-281)", "class": "architectural(cgram+io) + emulator_internal(math latches)" }
+      ]
+    },
+    "dsp": {
+      "cite": "bsnes:bsnes/sfc/dsp/serialization.cpp:1-28; blob layout sfc/dsp/SPC_DSP.cpp:949-1016 (copy_state), copier semantics SPC_DSP.cpp:905-946 + SPC_DSP.h:289-304",
+      "fields": [
+        { "path": "dsp.apuram", "bytes": 65536, "class": "architectural", "cms": "aram.data" },
+        { "path": "dsp.samplebuffer", "bytes": 1024, "class": "emulator_internal", "synthesis": "donor (8192? — nall array of int; exact byte count = element count x width pinned by dry-run in P1; output resampler FIFO either way)" },
+        { "path": "dsp.clock", "bytes": 8, "class": "emulator_internal", "synthesis": "donor (DSP<->SMP tick phase; pairs with smp.io.dspCounter)" },
+        { "path": "dsp.spc_dsp_blob", "bytes": 640, "class": "architectural (514 meaningful bytes; zero-padded to state_size=640)", "cms": "dsp_regs + dsp_internal", "transform": "blargg copy_state order: regs[128]; per-voice x8: brr_buf[12]xi16, interp_pos u16, brr_addr u16, env u16, hidden_env i16, buf_pos u8, brr_offset u8, kon_delay u8, env_mode u8, t_envx_out u8, extra(1 zero byte); echo_hist[8][2]xi16; every_other_sample u8, kon u8, noise u16, counter u16, echo_offset u16, echo_length u16, phase u8, new_kon u8, endx_buf u8, envx_buf u8, outx_buf u8, t_pmon u8, t_non u8, t_eon u8, t_dir u8, t_koff u8, t_brr_next_addr u16, t_adsr0 u8, t_brr_header u8, t_brr_byte u8, t_srcn u8, t_esa u8, t_echo_enabled u8, t_main_out[2]xi16, t_echo_out[2]xi16, t_echo_in[2]xi16, t_dir_addr u16, t_pitch u16, t_output i16, t_echo_ptr u16, t_looped u8, extra(1 zero byte). All multi-byte LE (copy_int via SET_LE16)."
+        }
+      ]
+    }
+  },
+  "mesen2_key_inventory": {
+    "_comment": "Top-level domains from SnesConsole::Serialize (mesen2:Core/SNES/SnesConsole.cpp:87-100), streamed with empty console prefix (Emulator.cpp Serialize: s.Stream(_console, \"\")). Sizes are self-described per record; expected sizes stated for validation. Classification mirrors the bsnes table; 'cms' names the CMS field.",
+    "cpu": {
+      "cite": "mesen2:Core/SNES/SnesCpu.Shared.h:626-631; types Core/SNES/SnesCpuTypes.h",
+      "keys": [
+        { "key": "cpu.a", "size": 2, "class": "architectural", "cms": "cpu.a" },
+        { "key": "cpu.cycleCount", "size": 8, "class": "emulator_internal", "synthesis": "not carried (master cycle count)" },
+        { "key": "cpu.d", "size": 2, "class": "architectural", "cms": "cpu.d" },
+        { "key": "cpu.dbr", "size": 1, "class": "architectural", "cms": "cpu.dbr" },
+        { "key": "cpu.emulationMode", "size": 1, "class": "architectural", "cms": "cpu.emulation_flag" },
+        { "key": "cpu.irqSource", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state", "rule": "bitfield of asserted IRQ sources; truth table" },
+        { "key": "cpu.k", "size": 1, "class": "architectural", "cms": "cpu.pbr" },
+        { "key": "cpu.nmiFlagCounter", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.nmi_line_state", "rule": "NMI edge pipeline; truth table" },
+        { "key": "cpu.pc", "size": 2, "class": "architectural", "cms": "cpu.pc" },
+        { "key": "cpu.prevIrqSource", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state" },
+        { "key": "cpu.ps", "size": 1, "class": "architectural", "cms": "cpu.p" },
+        { "key": "cpu.sp", "size": 2, "class": "architectural", "cms": "cpu.sp" },
+        { "key": "cpu.stopState", "size": 1, "class": "architectural", "cms": "cpu.stp + cpu.wai", "transform": "enum SnesCpuStopState {0 Running,1 Stopped,2 WaitingForIrq} (SnesCpuTypes.h:5-10) -> stp=(v==1), wai=(v==2)" },
+        { "key": "cpu.x", "size": 2, "class": "architectural", "cms": "cpu.x" },
+        { "key": "cpu.y", "size": 2, "class": "architectural", "cms": "cpu.y" },
+        { "key": "cpu.irqLock", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state" },
+        { "key": "cpu.needNmi", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.nmi_line_state" },
+        { "key": "cpu.waiOver", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu.wai companion (WAI exit bookkeeping); quiescent: consistent with stopState" }
+      ]
+    },
+    "memoryManager": {
+      "cite": "mesen2:Core/SNES/SnesMemoryManager.cpp (Serialize); WorkRamSize=0x20000 (SnesMemoryManager.h:32)",
+      "keys": [
+        { "key": "memoryManager.masterClock", "size": 8, "class": "emulator_internal", "synthesis": "not carried" },
+        { "key": "memoryManager.openBus", "size": 1, "class": "architectural", "cms": "cpu.mdr" },
+        { "key": "memoryManager.cpuSpeed", "size": 1, "class": "emulator_internal", "synthesis": "recompute (current memory-region access speed)" },
+        { "key": "memoryManager.hClock", "size": 2, "class": "architectural", "cms": "timing.hclock" },
+        { "key": "memoryManager.dramRefreshPosition", "size": 2, "class": "ambiguous_with_rule", "cms": "-", "rule": "see bsnes cpu.status.dramRefreshPosition" },
+        { "key": "memoryManager.memTypeBusA", "size": 1, "class": "emulator_internal", "synthesis": "recompute (bus-A region type cache)" },
+        { "key": "memoryManager.nextEvent", "size": 1, "class": "emulator_internal", "synthesis": "recompute (event-type enum)" },
+        { "key": "memoryManager.nextEventClock", "size": 2, "class": "emulator_internal", "synthesis": "recompute" },
+        { "key": "memoryManager.workRam", "size": 131072, "class": "architectural", "cms": "wram.data" },
+        { "key": "memoryManager.registerHandlerB.wramPosition", "size": 4, "class": "architectural", "cms": "cpu_io.wram_port_addr", "cite": "mesen2:Core/SNES/RegisterHandlerB.cpp:97-100" }
+      ]
+    },
+    "ppu": {
+      "cite": "mesen2:Core/SNES/SnesPpu.cpp:2253-2313; sizes SnesPpu.h:17-19",
+      "keys_architectural": [
+        { "key": "ppu.forcedBlank", "cms": "ppu.inidisp" }, { "key": "ppu.screenBrightness", "cms": "ppu.inidisp" },
+        { "key": "ppu.scanline", "size": 2, "cms": "timing.vcounter" },
+        { "key": "ppu.frameCount", "size": 4, "class": "emulator_internal", "synthesis": "not carried" },
+        { "key": "ppu.bgMode", "cms": "ppu.bgmode" }, { "key": "ppu.mode1Bg3Priority", "cms": "ppu.bgmode" },
+        { "key": "ppu.mainScreenLayers", "cms": "ppu.tm_ts" }, { "key": "ppu.subScreenLayers", "cms": "ppu.tm_ts" },
+        { "key": "ppu.vramAddress", "cms": "ppu.vram_addr" }, { "key": "ppu.vramIncrementValue", "cms": "ppu.vmain" },
+        { "key": "ppu.vramAddressRemapping", "cms": "ppu.vmain" }, { "key": "ppu.vramAddrIncrementOnSecondReg", "cms": "ppu.vmain" },
+        { "key": "ppu.vramReadBuffer", "size": 2, "cms": "ppu.vram_prefetch" },
+        { "key": "ppu.ppu1OpenBus", "cms": "ppu.ppu1_mdr" }, { "key": "ppu.ppu2OpenBus", "cms": "ppu.ppu2_mdr" },
+        { "key": "ppu.cgramAddress", "cms": "ppu.cgadd" }, { "key": "ppu.cgramAddressLatch", "cms": "ppu.cgadd" },
+        { "key": "ppu.cgramWriteBuffer", "cms": "ppu.cgram_write_buffer" },
+        { "key": "ppu.mosaicSize", "cms": "ppu.mosaic" }, { "key": "ppu.mosaicEnabled", "cms": "ppu.mosaic" },
+        { "key": "ppu.oamMode", "cms": "ppu.obsel" }, { "key": "ppu.oamBaseAddress", "cms": "ppu.obsel" }, { "key": "ppu.oamAddressOffset", "cms": "ppu.obsel" },
+        { "key": "ppu.oamRamAddress", "cms": "ppu.oamaddr_reload" }, { "key": "ppu.enableOamPriority", "cms": "ppu.oamaddr_reload" },
+        { "key": "ppu.oamWriteBuffer", "cms": "ppu.oam_write_buffer" },
+        { "key": "ppu.timeOver", "cms": "ppu.range_time_over" }, { "key": "ppu.rangeOver", "cms": "ppu.range_time_over" },
+        { "key": "ppu.hiResMode", "cms": "ppu.setini" }, { "key": "ppu.screenInterlace", "cms": "ppu.setini" }, { "key": "ppu.objInterlace", "cms": "ppu.setini" },
+        { "key": "ppu.overscanMode", "cms": "ppu.setini" }, { "key": "ppu.directColorMode", "cms": "ppu.cgwsel" },
+        { "key": "ppu.colorMathClipMode", "cms": "ppu.cgwsel" }, { "key": "ppu.colorMathPreventMode", "cms": "ppu.cgwsel" },
+        { "key": "ppu.colorMathAddSubscreen", "cms": "ppu.cgwsel" }, { "key": "ppu.colorMathEnabled", "cms": "ppu.cgadsub" },
+        { "key": "ppu.colorMathSubtractMode", "cms": "ppu.cgadsub" }, { "key": "ppu.colorMathHalveResult", "cms": "ppu.cgadsub" },
+        { "key": "ppu.fixedColor", "size": 2, "cms": "ppu.coldata" },
+        { "key": "ppu.hvScrollLatchValue", "cms": "ppu.bgofs_latch_ppu1" }, { "key": "ppu.hScrollLatchValue", "cms": "ppu.bgofs_latch_ppu2" },
+        { "key": "ppu.maskLogic[0..5]", "cms": "ppu.wbglog_wobjlog" },
+        { "key": "ppu.windowMaskMain[0..4] + ppu.windowMaskSub[0..4]", "cms": "ppu.tmw_tsw" },
+        { "key": "ppu.mode7.* (centerX,centerY,hScroll,vScroll,matrix[0..3],valueLatch,hFlip? verticalMirroring,horizontalMirroring,largeMap,fillWithTile0)", "cms": "ppu.m7_matrix + ppu.m7_center + ppu.m7_scroll + ppu.m7sel + ppu.m7_latch" },
+        { "key": "ppu.extBgEnabled", "cms": "ppu.setini" },
+        { "key": "ppu.internalOamAddress", "cms": "ppu.oam_internal_addr" },
+        { "key": "ppu.internalCgramAddress", "class": "ambiguous_with_rule", "cms": "ppu.cgadd", "rule": "live vs reload CGRAM address split; pin against write handlers in P2" },
+        { "key": "ppu.layers[0..3].{chrAddress,tilemapAddress,hScroll,vScroll,doubleWidth,doubleHeight,largeTiles}", "cms": "ppu.bg[4].*" },
+        { "key": "ppu.window[0..1].{activeLayers[0..5],invertedLayers[0..5],left,right}", "cms": "ppu.w12sel_w34sel_wobjsel + ppu.wh0_3" },
+        { "key": "ppu.vram", "size": 65536, "cms": "vram.data" },
+        { "key": "ppu.oamRam", "size": 544, "cms": "oam.data", "note": "RAW OAM bytes — decode side needs no object unpacking; the OAM bit-packing transform is encode-side only" },
+        { "key": "ppu.cgram", "size": 512, "cms": "cgram.data" },
+        { "key": "ppu.horizontalLocation", "cms": "ppu.hv_latched_h" }, { "key": "ppu.horizontalLocToggle", "cms": "ppu.ophct_toggle" },
+        { "key": "ppu.verticalLocation", "cms": "ppu.hv_latched_v" }, { "key": "ppu.verticalLocationToggle", "cms": "ppu.opvct_toggle" },
+        { "key": "ppu.locationLatched", "cms": "ppu.hv_latch_flag" },
+        { "key": "ppu.oddFrame", "cms": "timing.odd_frame" }
+      ],
+      "keys_internal": [
+        { "key": "ppu.vblankStartScanline|nmiScanline|vblankEndScanline|adjustedVblankEndScanline|baseVblankEndScanline|overclockEnabled", "synthesis": "recompute from region/overscan" },
+        { "key": "ppu.drawStartX|drawEndX|mosaicScanlineCounter", "synthesis": "mosaicScanlineCounter -> CMS ppu.mosaic_vcounter (ambiguous_with_rule); draw window internal" },
+        { "key": "ppu.layerData[0..3].tiles[0..32].* + ppu.hOffset|vOffset|fetchBgStart|fetchBgEnd|fetchSpriteStart|fetchSpriteEnd", "synthesis": "mid-scanline fetch pipeline — not carried (frame-edge/vblank captures render nothing mid-line; bsnes fast PPU has no equivalent)" }
+      ]
+    },
+    "dmaController": {
+      "cite": "mesen2:Core/SNES/SnesDmaController.cpp:638-648",
+      "keys": [
+        { "key": "dmaController.hdmaPending", "size": 1, "class": "ambiguous_with_rule", "cms": "dma.in_flight", "rule": "quiescent: false" },
+        { "key": "dmaController.hdmaChannels", "size": 1, "class": "architectural", "cms": "cpu_io.hdmaen" },
+        { "key": "dmaController.dmaPending", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.mdmaen_pending" },
+        { "key": "dmaController.dmaClockCounter", "size": 8, "class": "emulator_internal", "synthesis": "not carried" },
+        { "key": "dmaController.hdmaInitPending", "size": 1, "class": "ambiguous_with_rule", "cms": "dma.in_flight" },
+        { "key": "dmaController.dmaStartDelay", "size": 1, "class": "ambiguous_with_rule", "cms": "dma.in_flight" },
+        { "key": "dmaController.needToProcess", "size": 1, "class": "emulator_internal", "synthesis": "derived flag" },
+        { "key": "dmaController.channel[0..7].{decrement,destAddress,doTransfer,fixedTransfer,hdmaBank,hdmaFinished,hdmaIndirectAddressing,hdmaLineCounterAndRepeat,hdmaTableAddress,invertDirection,srcAddress,srcBank,transferMode,transferSize,unusedControlFlag,dmaActive,unusedRegister}", "class": "architectural (dmaActive: ambiguous, quiescent false)", "cms": "dma.ch[8].*", "transform": "decrement<->reverseTransfer? NO: mesen2 'decrement'=A-addr step direction = bsnes 'fixedTransfer'? — naming crosswalk pinned by register bit, not name: $43x0 bit7 invertDirection=direction, bit6 hdmaIndirectAddressing=indirect, bit5 unusedControlFlag=unused, bit4 decrement=reverseTransfer, bit3 fixedTransfer=fixedTransfer, bits0-2 transferMode=transferMode; destAddress=targetAddress($43x1), srcAddress=sourceAddress, srcBank=sourceBank, transferSize=transferSize/indirectAddress, hdmaBank=indirectBank, hdmaTableAddress=hdmaAddress, hdmaLineCounterAndRepeat=lineCounter, unusedRegister=unknown($43xB), hdmaFinished=hdmaCompleted, doTransfer=hdmaDoTransfer" }
+      ]
+    },
+    "internalRegisters": {
+      "cite": "mesen2:Core/SNES/InternalRegisters.cpp:394-414 + AluMulDiv.cpp:124-128",
+      "keys": [
+        { "key": "internalRegisters.enableFastRom", "size": 1, "class": "architectural", "cms": "cpu_io.memsel_fastrom" },
+        { "key": "internalRegisters.nmiFlag", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.rdnmi_flag" },
+        { "key": "internalRegisters.enableNmi", "size": 1, "class": "architectural", "cms": "cpu_io.nmitimen" },
+        { "key": "internalRegisters.enableHorizontalIrq", "size": 1, "class": "architectural", "cms": "cpu_io.nmitimen" },
+        { "key": "internalRegisters.enableVerticalIrq", "size": 1, "class": "architectural", "cms": "cpu_io.nmitimen" },
+        { "key": "internalRegisters.horizontalTimer", "size": 2, "class": "architectural", "cms": "cpu_io.htime", "transform": "raw dot (InternalRegisters.cpp:352-360); CMS canonical = raw dot" },
+        { "key": "internalRegisters.verticalTimer", "size": 2, "class": "architectural", "cms": "cpu_io.vtime" },
+        { "key": "internalRegisters.ioPortOutput", "size": 1, "class": "architectural", "cms": "cpu_io.wrio" },
+        { "key": "internalRegisters.controllerData[0..3]", "size": 2, "class": "architectural", "cms": "cpu_io.joy1..joy4" },
+        { "key": "internalRegisters.irqLevel", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state" },
+        { "key": "internalRegisters.needIrq", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.irq_line_state" },
+        { "key": "internalRegisters.enableAutoJoypadRead", "size": 1, "class": "architectural", "cms": "cpu_io.nmitimen" },
+        { "key": "internalRegisters.irqFlag", "size": 1, "class": "ambiguous_with_rule", "cms": "cpu_io.timeup_flag" },
+        { "key": "internalRegisters.aluMulDiv.{multOperand1,multOperand2,multOrRemainderResult,dividend,divisor,divResult}", "class": "architectural", "cms": "cpu_io.wrmpya/wrmpyb/rdmpy/wrdiva/wrdivb/rddiv", "note": "multOrRemainderResult=rdmpy, divResult=rddiv" },
+        { "key": "internalRegisters.aluMulDiv.{divCounter,multCounter,shift,prevCpuCycle}", "class": "ambiguous_with_rule", "cms": "cpu_io.alu_in_flight", "rule": "maps to bsnes alu.divctr/mpyctr/shift; prevCpuCycle emulator-internal (not carried); quiescent: counters 0" },
+        { "key": "internalRegisters.autoReadClockStart|autoReadNextClock|autoReadActive|autoReadDisabled|autoReadPort1Value|autoReadPort2Value", "class": "ambiguous_with_rule", "cms": "cpu_io.autojoy_state", "rule": "progress + 16-bit port shift values; quiescent: inactive" },
+        { "key": "internalRegisters.hCounter|vCounter", "size": 2, "class": "emulator_internal", "synthesis": "IRQ comparison mirrors of timing domain; recompute" }
+      ]
+    },
+    "cart": {
+      "cite": "mesen2:Core/SNES/BaseCartridge.cpp:735-747",
+      "keys": [
+        { "key": "cart.saveRam", "size": "cart_declared", "class": "architectural", "cms": "sram.data" },
+        { "key": "cart.coprocessor.* / cart.bsxMemPack.* / cart.gameboy.*", "class": "refused", "note": "presence of any key under these prefixes => REFUSE (chip firewall)" }
+      ]
+    },
+    "spc": {
+      "cite": "mesen2:Core/SNES/Spc.cpp:452-492 + SpcTimer.h:94-97; SpcRamSize=0x10000 (Spc.h:26)",
+      "keys": [
+        { "key": "spc.a|x|y|sp", "size": 1, "class": "architectural", "cms": "apu.spc700.a/x/y/sp" },
+        { "key": "spc.pc", "size": 2, "class": "architectural", "cms": "apu.spc700.pc" },
+        { "key": "spc.ps", "size": 1, "class": "architectural", "cms": "apu.spc700.psw" },
+        { "key": "spc.cycle", "size": 8, "class": "emulator_internal", "synthesis": "not carried (SPC master-cycle count; relative CPU<->SPC phase is the donor+P2 alignment problem)" },
+        { "key": "spc.cpuRegs[0..3]", "size": 1, "class": "architectural", "cms": "apu.port_from_cpu" },
+        { "key": "spc.outputReg[0..3]", "size": 1, "class": "architectural", "cms": "apu.port_to_cpu" },
+        { "key": "spc.ramReg[0..1]", "size": 1, "class": "architectural", "cms": "apu.aux_f8_f9" },
+        { "key": "spc.externalSpeed|internalSpeed|writeEnabled|timersEnabled|timersDisabled", "size": 1, "class": "architectural", "cms": "apu.test_f0", "note": "$F0 TEST decomposed; timersDisabled is bit0, timersEnabled bit3, ram bits per SpcState" },
+        { "key": "spc.dspReg", "size": 1, "class": "architectural", "cms": "apu.dsp_addr_f2" },
+        { "key": "spc.romEnabled", "size": 1, "class": "architectural", "cms": "apu.ipl_rom_enable" },
+        { "key": "spc.clockRatio", "size": 8, "class": "emulator_internal", "synthesis": "not carried (double; host clock ratio)" },
+        { "key": "spc.stopState", "size": 1, "class": "architectural", "cms": "apu.spc700.halt", "transform": "enum -> bsnes r.wait/r.stop" },
+        { "key": "spc.timer0|1|2.{stage0,stage1,stage2,output,target,enabled,timersEnabled,prevStage1}", "size": 1, "class": "architectural", "cms": "apu.timer[n].*", "note": "output = 4-bit read-to-clear counter (bsnes stage3); stage0/1/2 divider chain; prevStage1 edge memory — P2 pins the stage-name crosswalk against both step() functions" },
+        { "key": "spc.ram", "size": 65536, "class": "architectural", "cms": "aram.data" },
+        { "key": "spc.operandA|operandB|tmp1|tmp2|tmp3|opCode|opStep|opSubStep|enabled", "class": "ambiguous_with_rule", "cms": "excluded_domains.spc_sub_instruction", "rule": "SPC700 micro-step state machine. DECODE RULE: opStep MUST indicate instruction start; otherwise REFUSE (partial-instruction replay can double-consume read-to-clear registers). Mesen2's own Spc::Serialize runs Run() catch-up before saving (Spc.cpp:454-457) which lands wherever the CPU clock fell — StateProbe beacon captures land the SPC in its idle loop; P2 measures refuse-rate empirically" },
+        { "key": "spc.newCpuRegs[0..3] + spc.pendingCpuRegUpdate", "class": "ambiguous_with_rule", "cms": "apu.port_write_in_flight", "rule": "1-cycle-delayed CPU->APU port write staging. DECODE RULE: pendingCpuRegUpdate MUST be false (quiescent), else flush staged values into port_from_cpu (validity of the flush verified in P2 via live-injection C4)" },
+        { "key": "spc.dsp.* (see dsp inventory)", "class": "-", "cms": "-" }
+      ]
+    },
+    "spc_dsp": {
+      "cite": "mesen2:Core/SNES/DSP/Dsp.cpp:373-421 + DspVoice.cpp:381-396",
+      "keys": [
+        { "key": "spc.dsp.regs", "size": 128, "class": "architectural", "cms": "dsp.regs" },
+        { "key": "spc.dsp.externalRegs", "size": 128, "class": "architectural", "cms": "dsp.regs (readback copy)", "note": "Mesen2 keeps a write-visible copy; bsnes has one file — encode uses regs; P2 pins which copy feeds $F3 reads and asserts both equal at quiescent capture else refuse" },
+        { "key": "spc.dsp.voices[0..7].{envVolume,prevCalculatedEnv,interpolationPos,envMode,brrAddress,brrOffset,voiceBit,keyOnDelay,envOut,bufferPos,sampleBuffer[12]}", "class": "architectural", "cms": "dsp_internal voice fields", "transform": "envVolume<->env, prevCalculatedEnv<->hidden_env, interpolationPos<->interp_pos, envMode<->env_mode (enum values pinned P2), brrAddress<->brr_addr, brrOffset<->brr_offset, keyOnDelay<->kon_delay, envOut<->t_envx_out, bufferPos<->buf_pos, sampleBuffer<->brr_buf; voiceBit recomputed (1<<n)" },
+        { "key": "spc.dsp.noiseLfsr", "cms": "dsp.noise_lfsr" },
+        { "key": "spc.dsp.counter", "cms": "dsp.global_counter" },
+        { "key": "spc.dsp.step", "cms": "dsp.phase", "note": "32-step sample cycle position <-> blob phase; unit crosswalk pinned P2 (both count DSP clocks/sample-pair)" },
+        { "key": "spc.dsp.outRegBuffer|envRegBuffer|voiceEndBuffer", "cms": "dsp.outx_buf/envx_buf/endx_buf" },
+        { "key": "spc.dsp.voiceOutput|outSamples", "cms": "dsp.pipeline_regs (t_output, main_out)" },
+        { "key": "spc.dsp.pitch|sampleAddress|brrNextAddress|dirSampleTableAddress|brrHeader|brrData|looped|adsr1|sourceNumber", "cms": "dsp.pipeline_regs (t_pitch, t_brr_next_addr, t_dir_addr, t_brr_header, t_brr_byte, t_looped, t_adsr0, t_srcn)" },
+        { "key": "spc.dsp.noiseOn|pitchModulationOn|keyOn|newKeyOn|keyOff|everyOtherSample|echoOn|echoEnabled", "cms": "dsp.pipeline_regs + dsp.kon_latch/new_kon/every_other_sample (t_non/t_pmon/kon/new_kon/t_koff/every_other_sample/t_eon/t_echo_enabled)" },
+        { "key": "spc.dsp.echoIn|echoOut|echoHistory|echoPointer|echoLength|echoOffset|echoHistoryPos|echoRingBufferAddress", "cms": "dsp.echo_* + dsp.pipeline_regs (echo_in/echo_out/echo_history/t_echo_ptr/echo_length/echo_offset/echo_hist_pos/t_esa)" }
+      ]
+    },
+    "controlManager": {
+      "cite": "mesen2:Core/SNES/SnesControlManager.cpp:144-157 + Core/Shared/BaseControlManager.cpp:138-141 + Core/Shared/BaseControlDevice.cpp:326-331 + Core/SNES/Input/SnesController.cpp:78-82",
+      "keys": [
+        { "key": "controlManager.pollCounter", "size": 4, "class": "emulator_internal", "synthesis": "not carried (input-recording frame counter)" },
+        { "key": "controlManager.controlDevices[i].strobe", "size": 1, "class": "architectural", "cms": "cpu_io.autojoy_state (manual latch line; bsnes cpu.status.cpuLatch)" },
+        { "key": "controlManager.controlDevices[i].state.state", "size": "vector", "class": "emulator_internal", "synthesis": "not carried (host input snapshot)" },
+        { "key": "controlManager.controlDevices[i].stateBuffer", "size": 4, "class": "ambiguous_with_rule", "cms": "cpu_io.autojoy_state", "rule": "controller shift register mid-serial-read. bsnes serializes NO controller state (empty ControllerPort::serialize) and re-latches from input on next strobe — a mid-manual-read capture loses shift position in bsnes REGARDLESS of our codec. Quiescent rule: capture outside manual serial reads (auto-read results live in joy1-4 which carry). Divergence risk bounded to one input poll; StateProbe does not exercise manual serial reads" },
+        { "key": "controlManager.lastWriteValue", "size": 1, "class": "emulator_internal", "synthesis": "not carried ($4016 last write mirror)" }
+      ]
+    }
+  },
+  "interrupt_truth_table": {
+    "_comment": "P0 correspondence sketch; P2 finalizes against both edge-detector implementations with StateProbe v3 cadence audits. Both model the same hardware: NMI asserted at vblank start when enabled; RDNMI bit7 sticky-until-read; IRQ on H/V timer match; lines held until acknowledged.",
+    "nmi": {
+      "mesen2_fields": ["internalRegisters.nmiFlag (RDNMI bit7)", "cpu.needNmi (pending edge for CPU)", "cpu.nmiFlagCounter (edge pipeline delay)"],
+      "bsnes_fields": ["cpu.status.nmiValid (timing-window validity)", "nmiLine (current level)", "nmiTransition (edge seen, CPU not yet dispatched)", "nmiPending (dispatch queued)", "nmiHold (sample-hold within cycle)"],
+      "quiescent_rule": "capture parked where no NMI edge is mid-pipeline: nmiFlag maps to nmiLine; needNmi=false maps to nmiTransition=nmiPending=false; nmiValid/nmiHold recomputed from timing domain. StateProbe v0 beacon sits mid-frame (no vblank edge in flight)."
+    },
+    "irq": {
+      "mesen2_fields": ["internalRegisters.irqFlag (TIMEUP bit7)", "irqLevel", "needIrq", "cpu.irqSource/prevIrqSource", "cpu.irqLock"],
+      "bsnes_fields": ["cpu.status.irqValid", "irqLine", "irqTransition", "irqPending", "irqHold", "cpu.wdc.r.irq (pin)"],
+      "quiescent_rule": "no timer match mid-pipeline: irqFlag maps to irqLine and r.irq; transition/pending false; valid/hold recomputed."
+    }
+  },
+  "refuse_rules": {
+    "decode_mss": [
+      "console_type != 0 (Snes)",
+      "format_version < 3 (v4 expected; v3 accepted per Mesen2's own gate after P2 verification of key deltas)",
+      "any key with prefix cart.coprocessor. / cart.bsxMemPack. / cart.gameboy. / msu1.",
+      "spc.opStep not at instruction start (spc_sub_instruction rule)",
+      "spc.pendingCpuRegUpdate true (unless P2 validates the flush rule)",
+      "manifest sha256 mismatch (OUR identity discipline; the format has none — H7)"
+    ],
+    "encode_bst": [
+      "target cart profile must be plain LoROM/HiROM with declared SRAM size matching sram.data length (bsnes exact-size gate enforces mechanically)",
+      "emit synchronize=1, fastppu=1 only",
+      "donor template REQUIRED from the same ROM + same bsnes build (H6 power-on donor)"
+    ],
+    "decode_bst": [
+      "signature/version/size gates as bsnes unserialize",
+      "synchronize=0 => refuse (cothread stacks)",
+      "fastppu=0 => out-of-pilot-scope report (accurate-PPU layout inventoried but not walked by bst_dump v1)",
+      "cartridge.has.* inference: stream size != plain-cart dry-run size for the ROM => coprocessor blocks present => refuse (mechanical chip firewall)"
+    ]
+  },
+  "open_p2_pins": [
+    "OAM raw<->decoded-object bit packing (both PPUs' oamWrite/oamRead) — oracle: StateProbe OAM seed",
+    "SPC timer stage-name crosswalk (SpcTimer<N>::step vs bsnes Timer<Frequency>::step)",
+    "dsp env_mode enum value crosswalk",
+    "dsp.step <-> blob phase unit",
+    "Mesen2 externalRegs vs regs divergence semantics at capture",
+    "bsnes io.irqEnable composite semantics vs Mesen2 enableH/V (donor-check)",
+    "interrupt truth table finalization (StateProbe v3)",
+    "Thread.clock donor values: confirm runToSave parks all threads at clock offsets the donor reproduces (C4 isolates)",
+    "bsnes dsp.samplebuffer serialized byte count (nall array<int> width) — pin via serializeInit dry-run delta in P1 harness",
+    "fast-PPU io.oamAddress/oamBaseAddress live-vs-reload split vs Mesen2 oamRamAddress/InternalOamAddress"
+  ]
+}

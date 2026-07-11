@@ -1,0 +1,256 @@
+{
+  "_schema_version": 1,
+  "_comment": "CMS-SNES v1 — Canonical Machine State schema for plain LoROM/HiROM SNES (Spike T2.0). Architectural state ONLY: every field here is hardware-real. Emulator-internal fields live in the per-pair mapping files (mapping_mesen2_bsnes.json) with synthesis rules, never in the CMS. Classification key: 'architectural' = steady hardware state, portable by definition; 'ambiguous_with_rule' = hardware-real but transient/sub-instruction — portable only under the stated rule. Semantics citations are section names in fullsnes (nocash SNES hardware spec; SuperForge docs/reference/fullsnes.txt). Format truth is NEVER this file: it is the pinned vendored sources cited in the mapping file.",
+  "system": "snes",
+  "cart_scope": {
+    "allowed": ["lorom", "hirom"],
+    "refuse_by_default": "Any coprocessor presence (SA-1, SuperFX/GSU, DSP-n, CX4, OBC-1, S-DD1, SPC7110, ST-01x, SGB/ICD, MSU1, BS-X, exp-port devices) refuses transmutation loudly and leaves the native state untouched. Enumerated allowlist grows only by deliberate, validated addition."
+  },
+  "capture_contract": {
+    "point": "Instruction-boundary capture on the 65C816, with the SPC700 at a cycle-consistent catch-up point. Quiescent profile (StateProbe v0) additionally requires: no DMA/HDMA transfer in flight, ALU mul/div idle, auto-joypad read not active, no half-written write-twice latch, SPC700 at an instruction boundary, no in-flight CPU->APU port write.",
+    "rationale": "Both pilot emulators capture at CPU instruction boundaries (Mesen2: frame-edge or debugger-park; bsnes: runToSave thread-sync). Sub-instruction CPU state is therefore never portable and CMS does not model it. Sub-instruction APU/DSP pipeline state IS captured by both and IS modeled (dsp_internal)."
+  },
+  "domains": {
+    "wram": {
+      "stateprobe_domain_id": 0,
+      "fields": [
+        { "id": "wram.data", "shape": "u8[131072]", "class": "architectural", "semantics": "Work RAM, banks $7E-$7F", "fullsnes": "Memory Map / WRAM" }
+      ]
+    },
+    "vram": {
+      "stateprobe_domain_id": 1,
+      "fields": [
+        { "id": "vram.data", "shape": "u16le[32768]", "class": "architectural", "semantics": "Video RAM, 64 KiB as 32K words (word-addressed by PPU)", "fullsnes": "PPU Memory / VRAM" }
+      ]
+    },
+    "cgram": {
+      "stateprobe_domain_id": 2,
+      "fields": [
+        { "id": "cgram.data", "shape": "u16le[256]", "class": "architectural", "semantics": "Palette RAM, 256 BGR555 entries; bit 15 reads back as PPU2 open-bus on hardware — canonicalize masked to 15 bits", "fullsnes": "PPU Color Palette Memory (CGRAM)" }
+      ]
+    },
+    "oam": {
+      "stateprobe_domain_id": 3,
+      "fields": [
+        { "id": "oam.data", "shape": "u8[544]", "class": "architectural", "semantics": "Object Attribute Memory: 512-byte low table (128 sprites x 4 bytes) + 32-byte high table (x-MSB + size bits)", "fullsnes": "PPU Sprites (OBJs)" }
+      ]
+    },
+    "aram": {
+      "stateprobe_domain_id": 4,
+      "fields": [
+        { "id": "aram.data", "shape": "u8[65536]", "class": "architectural", "semantics": "Audio RAM (SPC700 address space). The $FFC0-$FFFF window content is the RAM UNDER the IPL ROM; visibility is governed by apu_io.ipl_rom_enable", "fullsnes": "APU Memory" }
+      ]
+    },
+    "dsp_regs": {
+      "stateprobe_domain_id": 5,
+      "fields": [
+        { "id": "dsp.regs", "shape": "u8[128]", "class": "architectural", "semantics": "S-DSP register file $00-$7F as last written (VxVOL/VxPITCH/VxSRCN/VxADSR/VxGAIN, ENVX/OUTX, MVOL/EVOL, KON/KOF, FLG, ENDX, EFB, PMON, NON, EON, DIR, ESA, EDL, FIR coefficients)", "fullsnes": "APU DSP Registers" }
+      ]
+    },
+    "dsp_internal": {
+      "stateprobe_domain_id": 5,
+      "_comment": "Hardware-real DSP engine state below register granularity. Both pilot emulators model the same silicon pipeline (blargg-lineage), so these map nearly 1:1; they are 'internal' to the DSP chip, not to any emulator. All are ambiguous_with_rule ONLY in the sense that they advance every DSP tick; at any capture point they have exact values both sides represent.",
+      "fields": [
+        { "id": "dsp.voice[8].brr_buf", "shape": "i16le[12] x8", "class": "architectural", "semantics": "Per-voice BRR decode ring buffer (12 decoded samples)", "fullsnes": "APU DSP BRR Samples" },
+        { "id": "dsp.voice[8].interp_pos", "shape": "u16", "class": "architectural", "semantics": "Per-voice 4.12 sample interpolation position (gaussian pointer)" },
+        { "id": "dsp.voice[8].brr_addr", "shape": "u16", "class": "architectural", "semantics": "Per-voice current BRR block address in ARAM" },
+        { "id": "dsp.voice[8].brr_offset", "shape": "u8", "class": "architectural", "semantics": "Per-voice byte offset within current BRR block (1..8)" },
+        { "id": "dsp.voice[8].buf_pos", "shape": "u8", "class": "architectural", "semantics": "Per-voice write position within brr_buf (0..11)" },
+        { "id": "dsp.voice[8].env_value", "shape": "u16", "class": "architectural", "semantics": "Per-voice envelope current level (0..$7FF)", "fullsnes": "APU DSP ADSR/GAIN" },
+        { "id": "dsp.voice[8].hidden_env", "shape": "i16", "class": "architectural", "semantics": "Per-voice internal envelope accumulator (persists through GAIN direct writes)" },
+        { "id": "dsp.voice[8].env_mode", "shape": "u8", "class": "architectural", "semantics": "Per-voice envelope state machine phase (release/attack/decay/sustain)" },
+        { "id": "dsp.voice[8].kon_delay", "shape": "u8", "class": "architectural", "semantics": "Per-voice key-on startup countdown (5..0)" },
+        { "id": "dsp.voice[8].envx_out", "shape": "u8", "class": "architectural", "semantics": "Per-voice last ENVX value latched for register readback" },
+        { "id": "dsp.echo_history", "shape": "i16le[8][2]", "class": "architectural", "semantics": "8-tap stereo FIR echo filter history ring" },
+        { "id": "dsp.echo_offset", "shape": "u16", "class": "architectural", "semantics": "Current byte offset within the echo region (advances by 4 per sample)" },
+        { "id": "dsp.echo_length", "shape": "u16", "class": "architectural", "semantics": "Latched echo region length (EDL captured at region wrap)" },
+        { "id": "dsp.echo_hist_pos", "shape": "u8", "class": "architectural", "semantics": "Echo history ring index (0..7)" },
+        { "id": "dsp.noise_lfsr", "shape": "u16", "class": "architectural", "semantics": "15-bit noise LFSR current value", "fullsnes": "APU DSP Noise" },
+        { "id": "dsp.global_counter", "shape": "u16", "class": "architectural", "semantics": "Global rate counter driving envelope/noise timing (period 30720)" },
+        { "id": "dsp.every_other_sample", "shape": "u8", "class": "architectural", "semantics": "1-bit toggle: KON/KOF are sampled every other DSP sample" },
+        { "id": "dsp.kon_latch", "shape": "u8", "class": "architectural", "semantics": "Latched KON bits under processing" },
+        { "id": "dsp.new_kon", "shape": "u8", "class": "architectural", "semantics": "KON bits written since last poll" },
+        { "id": "dsp.endx_buf", "shape": "u8", "class": "architectural", "semantics": "ENDX register pipeline buffer" },
+        { "id": "dsp.envx_buf", "shape": "u8", "class": "architectural", "semantics": "ENVX register pipeline buffer" },
+        { "id": "dsp.outx_buf", "shape": "u8", "class": "architectural", "semantics": "OUTX register pipeline buffer" },
+        { "id": "dsp.phase", "shape": "u8", "class": "ambiguous_with_rule", "rule": "Intra-sample pipeline step (0..31 DSP clocks per sample pair). Both sides represent it; copy directly. Quiescent captures SHOULD land at a stable phase but any value is representable — divergence here is bounded to one output sample.", "semantics": "Position within the 32-clock DSP sample cycle" },
+        { "id": "dsp.pipeline_regs", "shape": "struct", "class": "architectural", "semantics": "Per-clock pipeline latches (t_pmon, t_non, t_eon, t_dir, t_koff, t_brr_next_addr, t_adsr0, t_brr_header, t_brr_byte, t_srcn, t_esa, t_echo_enabled, t_dir_addr, t_pitch, t_output, t_looped, t_echo_ptr, main_out[2], echo_out[2], echo_in[2]). Same silicon model both sides; copy field-for-field per mapping table." }
+      ]
+    },
+    "apu_io": {
+      "stateprobe_domain_id": 6,
+      "fields": [
+        { "id": "apu.spc700.pc", "shape": "u16", "class": "architectural", "semantics": "SPC700 program counter", "fullsnes": "APU CPU (SPC700)" },
+        { "id": "apu.spc700.a", "shape": "u8", "class": "architectural", "semantics": "SPC700 accumulator" },
+        { "id": "apu.spc700.x", "shape": "u8", "class": "architectural", "semantics": "SPC700 X" },
+        { "id": "apu.spc700.y", "shape": "u8", "class": "architectural", "semantics": "SPC700 Y" },
+        { "id": "apu.spc700.sp", "shape": "u8", "class": "architectural", "semantics": "SPC700 stack pointer (page 1)" },
+        { "id": "apu.spc700.psw", "shape": "u8", "class": "architectural", "semantics": "SPC700 status flags NVPBHIZC packed" },
+        { "id": "apu.spc700.halt", "shape": "flags", "class": "architectural", "semantics": "SLEEP/STOP execution state" },
+        { "id": "apu.port_to_cpu", "shape": "u8[4]", "class": "architectural", "semantics": "APU->CPU mailbox: SPC-side writes to $F4-$F7, visible at $2140-43", "fullsnes": "APU I/O Ports" },
+        { "id": "apu.port_from_cpu", "shape": "u8[4]", "class": "architectural", "semantics": "CPU->APU mailbox: CPU-side writes to $2140-43, visible at $F4-$F7" },
+        { "id": "apu.aux_f8_f9", "shape": "u8[2]", "class": "architectural", "semantics": "$F8/$F9 general-purpose RAM registers" },
+        { "id": "apu.control_f1", "shape": "flags", "class": "architectural", "semantics": "$F1 CONTROL: timer enables, IPL ROM enable (port-clear strobes are write-transient, not state)" },
+        { "id": "apu.test_f0", "shape": "flags", "class": "architectural", "semantics": "$F0 TEST: internal/external wait states, RAM enable/writable, timer disable. Nonstandard values are hardware-legal but games never use them; canonical value $0A", "fullsnes": "APU Test Register" },
+        { "id": "apu.dsp_addr_f2", "shape": "u8", "class": "architectural", "semantics": "$F2 DSPADDR latch" },
+        { "id": "apu.ipl_rom_enable", "shape": "bool", "class": "architectural", "semantics": "IPL ROM mapped over $FFC0-$FFFF (CONTROL bit 7)" },
+        { "id": "apu.timer[3].enable", "shape": "bool x3", "class": "architectural", "semantics": "Per-timer enable (CONTROL bits 0-2)", "fullsnes": "APU Timers" },
+        { "id": "apu.timer[3].target", "shape": "u8 x3", "class": "architectural", "semantics": "Per-timer target/divisor ($FA-$FC)" },
+        { "id": "apu.timer[3].internal_stages", "shape": "struct x3", "class": "architectural", "semantics": "Timer prescaler + divider stage counters (stage0/1/2). Hardware-real counters below register granularity; both sides model them — copy per mapping" },
+        { "id": "apu.timer[3].output", "shape": "u4 x3", "class": "ambiguous_with_rule", "rule": "Read-to-clear output counters $FD-$FF. Copy value directly; the READ side-effect is a capture-protocol concern (a probe that read them just before capture sees them cleared), not a mapping concern.", "semantics": "4-bit up-counters, cleared on SPC read" }
+      ]
+    },
+    "sram": {
+      "stateprobe_domain_id": 7,
+      "fields": [
+        { "id": "sram.data", "shape": "u8[cart_declared]", "class": "architectural", "semantics": "Battery RAM view embedded in the state. Size from cart header (StateProbe: 8 KiB). T2 open question (design doc): refresh-with-current-SRAM at rebuild time — StateProbe's seeded SRAM audit answers it in P2/P3", "fullsnes": "Cartridge / SRAM" }
+      ]
+    },
+    "cpu": {
+      "stateprobe_domain_id": 8,
+      "fields": [
+        { "id": "cpu.a", "shape": "u16", "class": "architectural", "semantics": "65C816 accumulator C (B:A)", "fullsnes": "CPU Registers" },
+        { "id": "cpu.x", "shape": "u16", "class": "architectural", "semantics": "Index X" },
+        { "id": "cpu.y", "shape": "u16", "class": "architectural", "semantics": "Index Y" },
+        { "id": "cpu.sp", "shape": "u16", "class": "architectural", "semantics": "Stack pointer S" },
+        { "id": "cpu.d", "shape": "u16", "class": "architectural", "semantics": "Direct page register D" },
+        { "id": "cpu.pc", "shape": "u16", "class": "architectural", "semantics": "Program counter (within bank)" },
+        { "id": "cpu.pbr", "shape": "u8", "class": "architectural", "semantics": "Program bank register K" },
+        { "id": "cpu.dbr", "shape": "u8", "class": "architectural", "semantics": "Data bank register B" },
+        { "id": "cpu.p", "shape": "u8", "class": "architectural", "semantics": "Status NVMXDIZC packed" },
+        { "id": "cpu.emulation_flag", "shape": "bool", "class": "architectural", "semantics": "6502 emulation mode flag E" },
+        { "id": "cpu.stp", "shape": "bool", "class": "architectural", "semantics": "STP executed (halted until reset)" },
+        { "id": "cpu.wai", "shape": "bool", "class": "architectural", "semantics": "WAI executed (waiting for interrupt)" },
+        { "id": "cpu.mdr", "shape": "u8", "class": "architectural", "semantics": "Memory data register = open-bus value", "fullsnes": "Unused and Open Bus" }
+      ]
+    },
+    "cpu_io": {
+      "stateprobe_domain_id": 8,
+      "fields": [
+        { "id": "cpu_io.nmitimen", "shape": "flags", "class": "architectural", "semantics": "$4200: NMI enable, V/H IRQ enable, auto-joypad enable", "fullsnes": "CPU Interrupts" },
+        { "id": "cpu_io.wrio", "shape": "u8", "class": "architectural", "semantics": "$4201 programmable I/O port out (bit7 latches counters on 1->0)" },
+        { "id": "cpu_io.wrmpya", "shape": "u8", "class": "architectural", "semantics": "$4202 multiplicand" },
+        { "id": "cpu_io.wrmpyb", "shape": "u8", "class": "architectural", "semantics": "$4203 multiplier (last written)" },
+        { "id": "cpu_io.wrdiva", "shape": "u16", "class": "architectural", "semantics": "$4204/05 dividend" },
+        { "id": "cpu_io.wrdivb", "shape": "u8", "class": "architectural", "semantics": "$4206 divisor (last written)" },
+        { "id": "cpu_io.htime", "shape": "u9", "class": "architectural", "semantics": "$4207/08 H-IRQ dot position (bsnes stores premultiplied x4; see mapping transform)" },
+        { "id": "cpu_io.vtime", "shape": "u9", "class": "architectural", "semantics": "$4209/0A V-IRQ scanline" },
+        { "id": "cpu_io.mdmaen_pending", "shape": "u8", "class": "ambiguous_with_rule", "rule": "GP-DMA enable bits written but transfer not yet started (start delay). Quiescent captures require 0; otherwise map with the dma domain's in-flight rule.", "semantics": "$420B latched pending state" },
+        { "id": "cpu_io.hdmaen", "shape": "u8", "class": "architectural", "semantics": "$420C HDMA channel enable mask" },
+        { "id": "cpu_io.memsel_fastrom", "shape": "bool", "class": "architectural", "semantics": "$420D bit0 FastROM enable" },
+        { "id": "cpu_io.rdnmi_flag", "shape": "bool", "class": "ambiguous_with_rule", "rule": "$4210 bit7 NMI-occurred flag (cleared on read). Copy directly; interacts with nmi edge pipeline — see mapping interrupt truth table.", "semantics": "NMI flag" },
+        { "id": "cpu_io.timeup_flag", "shape": "bool", "class": "ambiguous_with_rule", "rule": "$4211 bit7 IRQ-occurred flag (cleared on read). Copy directly; see interrupt truth table.", "semantics": "H/V IRQ flag" },
+        { "id": "cpu_io.nmi_line_state", "shape": "struct", "class": "ambiguous_with_rule", "rule": "Internal NMI edge-detector pipeline (line level, transition pending, hold). Microarchitecture differs per emulator; mapped via documented truth table in the mapping file. Quiescent beacon = no interrupt transition in flight.", "semantics": "NMI line + edge state" },
+        { "id": "cpu_io.irq_line_state", "shape": "struct", "class": "ambiguous_with_rule", "rule": "Same as nmi_line_state for H/V IRQ.", "semantics": "IRQ line + edge state" },
+        { "id": "cpu_io.rddiv", "shape": "u16", "class": "architectural", "semantics": "$4214/15 division quotient result" },
+        { "id": "cpu_io.rdmpy", "shape": "u16", "class": "architectural", "semantics": "$4216/17 multiply product / division remainder" },
+        { "id": "cpu_io.alu_in_flight", "shape": "struct", "class": "ambiguous_with_rule", "rule": "In-flight mul (8 cyc) / div (16 cyc) countdown + shift accumulator. Both emulators model the same iterative silicon: map counters+shift directly. Quiescent captures require idle (counters 0). StateProbe v3 exercises non-idle deliberately.", "semantics": "ALU $4202-$4217 busy state", "fullsnes": "CPU Maths" },
+        { "id": "cpu_io.joy1", "shape": "u16", "class": "architectural", "semantics": "$4218/19 auto-read result port 1" },
+        { "id": "cpu_io.joy2", "shape": "u16", "class": "architectural", "semantics": "$421A/1B auto-read result port 2" },
+        { "id": "cpu_io.joy3", "shape": "u16", "class": "architectural", "semantics": "$421C/1D auto-read result port 1, pad 2" },
+        { "id": "cpu_io.joy4", "shape": "u16", "class": "architectural", "semantics": "$421E/1F auto-read result port 2, pad 2" },
+        { "id": "cpu_io.wram_port_addr", "shape": "u17", "class": "architectural", "semantics": "$2181-83 WRAM data-port address", "fullsnes": "CPU Memory Access / WRAM port" },
+        { "id": "cpu_io.autojoy_state", "shape": "struct", "class": "ambiguous_with_rule", "rule": "Auto-joypad read runs the first ~4224 master cycles of vblank; a vblank-start capture can be mid-read. Both sides serialize progress (counter/clock + port shift latches). Map per table; quiescent beacon must sit OUTSIDE the auto-read window (StateProbe parks beacon accordingly).", "semantics": "Auto-joypad read progress + controller latch lines" }
+      ]
+    },
+    "irq_nmi_cadence": {
+      "stateprobe_domain_id": 9,
+      "_comment": "Covered by cpu_io.nmi_line_state / irq_line_state / rdnmi_flag / timeup_flag plus timing domain. StateProbe domain 9 audits the cadence behaviorally.",
+      "fields": []
+    },
+    "timing": {
+      "stateprobe_domain_id": 10,
+      "fields": [
+        { "id": "timing.vcounter", "shape": "u9", "class": "architectural", "semantics": "Current scanline (0..261/311)", "fullsnes": "PPU Timing" },
+        { "id": "timing.hclock", "shape": "u12", "class": "architectural", "semantics": "Master-clock position within scanline (0..1363; both pilot emulators count master clocks intra-line)" },
+        { "id": "timing.odd_frame", "shape": "bool", "class": "architectural", "semantics": "Odd/even frame flip-flop (long/short dot on NTSC, interlace field pairing)" },
+        { "id": "timing.interlace_field", "shape": "bool", "class": "architectural", "semantics": "Interlace field bit (readable via $213F bit7)" },
+        { "id": "ppu.hv_latched_h", "shape": "u9", "class": "architectural", "semantics": "OPHCT latched H dot ($213C)" },
+        { "id": "ppu.hv_latched_v", "shape": "u9", "class": "architectural", "semantics": "OPVCT latched V ($213D)" },
+        { "id": "ppu.hv_latch_flag", "shape": "bool", "class": "architectural", "semantics": "Counters latched flag ($213F bit6)" },
+        { "id": "ppu.ophct_toggle", "shape": "bool", "class": "architectural", "semantics": "OPHCT byte-read toggle" },
+        { "id": "ppu.opvct_toggle", "shape": "bool", "class": "architectural", "semantics": "OPVCT byte-read toggle" }
+      ]
+    },
+    "mailbox_protocol": {
+      "stateprobe_domain_id": 11,
+      "_comment": "Behavioral domain (StateProbe sequence counters ride in WRAM/ARAM). The state carrier is apu.port_to_cpu/port_from_cpu; one hazard field:",
+      "fields": [
+        { "id": "apu.port_write_in_flight", "shape": "struct", "class": "ambiguous_with_rule", "rule": "Mesen2 models a 1-cycle-delayed CPU->APU port write (pending flag + staged values); bsnes applies writes at sync granularity. Quiescent rule: pending MUST be false at capture (StateProbe v0 guarantees; decode refuses otherwise or flushes staged values into port_from_cpu after verifying the staged-write semantics in P2).", "semantics": "In-flight CPU->APU mailbox write" }
+      ]
+    },
+    "dma": {
+      "stateprobe_domain_id": 12,
+      "fields": [
+        { "id": "dma.ch[8].params", "shape": "u8", "class": "architectural", "semantics": "$43x0 DMAP: direction, indirect, addressing mode, fixed, decrement, transfer pattern", "fullsnes": "DMA and HDMA" },
+        { "id": "dma.ch[8].b_addr", "shape": "u8", "class": "architectural", "semantics": "$43x1 B-bus address" },
+        { "id": "dma.ch[8].a_addr", "shape": "u16", "class": "architectural", "semantics": "$43x2/3 A-bus address (live-decremented/incremented during transfer)" },
+        { "id": "dma.ch[8].a_bank", "shape": "u8", "class": "architectural", "semantics": "$43x4 A-bus bank" },
+        { "id": "dma.ch[8].size_or_indirect", "shape": "u16", "class": "architectural", "semantics": "$43x5/6 byte count (GP-DMA, counts down) / indirect address (HDMA)" },
+        { "id": "dma.ch[8].indirect_bank", "shape": "u8", "class": "architectural", "semantics": "$43x7 indirect HDMA bank" },
+        { "id": "dma.ch[8].hdma_table_addr", "shape": "u16", "class": "architectural", "semantics": "$43x8/9 current HDMA table address (advances per line)" },
+        { "id": "dma.ch[8].hdma_line_counter", "shape": "u8", "class": "architectural", "semantics": "$43xA line counter + repeat bit (reload state)" },
+        { "id": "dma.ch[8].unused_43xb", "shape": "u8", "class": "architectural", "semantics": "$43xB/$43xF unused readable/writable byte" },
+        { "id": "dma.ch[8].hdma_completed", "shape": "bool", "class": "architectural", "semantics": "Channel finished for this frame" },
+        { "id": "dma.ch[8].hdma_do_transfer", "shape": "bool", "class": "architectural", "semantics": "Do-transfer flag (repeat semantics between reloads)" },
+        { "id": "dma.in_flight", "shape": "struct", "class": "ambiguous_with_rule", "rule": "A GP-DMA mid-transfer or HDMA mid-line-setup at capture. Quiescent rule: nothing in flight (StateProbe v0 guarantees; frame-edge capture makes GP-DMA-in-flight impossible unless the game started one spanning vblank entry). Per-frame HDMA setup/run event positions are emulator bookkeeping synthesized from timing domain on encode; the per-channel table/line state above is architectural and carries.", "semantics": "DMA engine transient bookkeeping" }
+      ]
+    },
+    "ppu_regs": {
+      "stateprobe_domain_id": [10, "witness-frame verified: write-only"],
+      "fields": [
+        { "id": "ppu.inidisp", "shape": "flags", "class": "architectural", "semantics": "$2100 forced blank + brightness", "fullsnes": "PPU Registers" },
+        { "id": "ppu.obsel", "shape": "flags", "class": "architectural", "semantics": "$2101 OBJ size select, name base, name select" },
+        { "id": "ppu.oamaddr_reload", "shape": "u9+bool", "class": "architectural", "semantics": "$2102/03 OAM address reload value + priority-rotation enable" },
+        { "id": "ppu.oam_internal_addr", "shape": "u10", "class": "architectural", "semantics": "Live internal OAM word/byte address (advances on writes; reset at vblank per reload)" },
+        { "id": "ppu.oam_write_buffer", "shape": "u8", "class": "architectural", "semantics": "Low-byte latch for paired OAM low-table writes (write-twice hazard target)" },
+        { "id": "ppu.bgmode", "shape": "flags", "class": "architectural", "semantics": "$2105 BG mode + BG3 priority + tile size bits" },
+        { "id": "ppu.mosaic", "shape": "flags", "class": "architectural", "semantics": "$2106 mosaic size + per-BG enable" },
+        { "id": "ppu.mosaic_vcounter", "shape": "u16", "class": "ambiguous_with_rule", "rule": "Mosaic row phase (scanline counter within mosaic block). Hardware-real; both sides model (Mesen2 _mosaicScanlineCounter, bsnes mosaic.vcounter). Copy with the timing domain; only meaningful mid-frame.", "semantics": "Mosaic vertical phase" },
+        { "id": "ppu.bg[4].tilemap", "shape": "u8 x4", "class": "architectural", "semantics": "$2107-0A screen base + size" },
+        { "id": "ppu.bg[4].chr_base", "shape": "u4 x4", "class": "architectural", "semantics": "$210B/0C tiledata base" },
+        { "id": "ppu.bg[4].hofs", "shape": "u10 x4", "class": "architectural", "semantics": "$210D-14 BGnHOFS current value" },
+        { "id": "ppu.bg[4].vofs", "shape": "u10 x4", "class": "architectural", "semantics": "$210D-14 BGnVOFS current value" },
+        { "id": "ppu.bgofs_latch_ppu1", "shape": "u8", "class": "architectural", "semantics": "Shared write-twice scroll latch (previous byte written) — StateProbe v1 half-write hazard target" },
+        { "id": "ppu.bgofs_latch_ppu2", "shape": "u3", "class": "architectural", "semantics": "Secondary 3-bit scroll latch (hofs fine bits)" },
+        { "id": "ppu.m7_latch", "shape": "u8", "class": "architectural", "semantics": "Mode7 write-twice latch ($211B-20 low byte)" },
+        { "id": "ppu.vmain", "shape": "flags", "class": "architectural", "semantics": "$2115 VRAM increment mode/size/remap" },
+        { "id": "ppu.vram_addr", "shape": "u16", "class": "architectural", "semantics": "$2116/17 VRAM word address" },
+        { "id": "ppu.vram_prefetch", "shape": "u16", "class": "architectural", "semantics": "VRAM read prefetch buffer (dummy-read quirk state) — StateProbe v1 hazard target" },
+        { "id": "ppu.m7sel", "shape": "flags", "class": "architectural", "semantics": "$211A Mode7 flip/repeat/fill" },
+        { "id": "ppu.m7_matrix", "shape": "u16 x4", "class": "architectural", "semantics": "$211B-1E M7A-M7D (also mul input: M7A x M7B.high -> $2134-36)" },
+        { "id": "ppu.m7_center", "shape": "u13 x2", "class": "architectural", "semantics": "$211F/20 M7X/M7Y" },
+        { "id": "ppu.m7_scroll", "shape": "u13 x2", "class": "architectural", "semantics": "$210D/0E Mode7 HOFS/VOFS (13-bit signed)" },
+        { "id": "ppu.cgadd", "shape": "u8+bool", "class": "architectural", "semantics": "$2121 CGRAM address + high/low latch flag" },
+        { "id": "ppu.cgram_write_buffer", "shape": "u8", "class": "architectural", "semantics": "CGRAM low-byte write latch — StateProbe v1 hazard target" },
+        { "id": "ppu.w12sel_w34sel_wobjsel", "shape": "flags x3", "class": "architectural", "semantics": "$2123-25 window enable/invert per layer" },
+        { "id": "ppu.wh0_3", "shape": "u8 x4", "class": "architectural", "semantics": "$2126-29 window positions" },
+        { "id": "ppu.wbglog_wobjlog", "shape": "flags x2", "class": "architectural", "semantics": "$212A/2B window mask logic" },
+        { "id": "ppu.tm_ts", "shape": "flags x2", "class": "architectural", "semantics": "$212C/2D main/sub screen layer enable" },
+        { "id": "ppu.tmw_tsw", "shape": "flags x2", "class": "architectural", "semantics": "$212E/2F window area enable" },
+        { "id": "ppu.cgwsel", "shape": "flags", "class": "architectural", "semantics": "$2130 color math clip/prevent/add-subscreen/direct-color" },
+        { "id": "ppu.cgadsub", "shape": "flags", "class": "architectural", "semantics": "$2131 color math enable per layer + subtract + halve" },
+        { "id": "ppu.coldata", "shape": "u5 x3", "class": "architectural", "semantics": "$2132 fixed color B/G/R components" },
+        { "id": "ppu.setini", "shape": "flags", "class": "architectural", "semantics": "$2133 interlace, obj-interlace, overscan, pseudo-hires, EXTBG" },
+        { "id": "ppu.ppu1_mdr", "shape": "u8", "class": "architectural", "semantics": "PPU1 open-bus data register ($2134-36 et al. readback)" },
+        { "id": "ppu.ppu2_mdr", "shape": "u8", "class": "architectural", "semantics": "PPU2 open-bus data register" },
+        { "id": "ppu.range_time_over", "shape": "bool x2", "class": "architectural", "semantics": "$213E sprite range/time overflow flags (per-frame)" }
+      ]
+    },
+    "epoch_continuity": {
+      "stateprobe_domain_id": 13,
+      "_comment": "Pure behavioral domain: StateProbe's own WRAM epoch counter must continue monotonically after transfer. No state fields beyond wram.",
+      "fields": []
+    }
+  },
+  "excluded_domains": {
+    "_comment": "Enumerated exclusions with reason. Presence of any of these in a source state (or cart) => REFUSE.",
+    "coprocessor_state": "Chip firewall (design doc): SA-1, GSU/SuperFX, DSP-n, CX4, OBC-1, S-DD1, SPC7110, ST-01x, SGB/ICD, MSU1, BS-X, Sufami Turbo.",
+    "expansion_port_devices": "Satellaview et al. — refuse.",
+    "cpu_sub_instruction": "65C816 mid-instruction state (cycle-within-opcode, internal temporaries, pending bus transaction). Unportable by capture contract; capture protocol guarantees instruction boundary.",
+    "spc_sub_instruction": "SPC700 mid-instruction micro-step (Mesen2 models per-cycle opStep/opSubStep + operand temporaries; bsnes is instruction-atomic). Quiescent rule: Mesen2 opStep MUST equal instruction-start at capture, else refuse (replaying a partial instruction can double-consume read-to-clear APU registers). StateProbe beacon design makes this constructible; frame-edge captures empirically land here (P2 will measure how often).",
+    "emulator_framebuffers": "Rendered output is derived state; regenerated within one frame.",
+    "emulator_audio_buffers": "Resampler/output FIFOs are host-side; regenerated.",
+    "emulator_scheduling": "Cycle accounting, event queues, thread/cothread state, clock ratios: synthesized by the target's own power-on + load path (donor template)."
+  }
+}

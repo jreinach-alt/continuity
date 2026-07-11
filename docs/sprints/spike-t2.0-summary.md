@@ -1,13 +1,13 @@
 # Spike T2.0 — Running Summary / Findings Ledger
 
-**Status: P0 (format archaeology) COMPLETE except fixture import** —
-session 2 (2026-07-11, continuation branch
-`claude/spike-t2-continuation-4ejjew`) delivered the full field
-inventory, the CMS mapping tables, both decode oracles, and their test
-suite. The one remaining P0 item — StateProbe fixture import + a real
-beacon `.mss` — is blocked on SuperForge repo access (below) and rides
-into the next session. **No structural blocker found: G0's technical
-bar is met; owner check-in before P1 is now due.**
+**Status: P0 (format archaeology) COMPLETE** — session 2 (2026-07-11,
+continuation branch `claude/spike-t2-continuation-4ejjew`) delivered
+the full field inventory, the CMS mapping tables, both decode
+oracles, and their test suite; session 1 (post-closeout addendum,
+`6611b6c`) imported the StateProbe fixtures and captured a real
+beacon `.mss`; session 2 merged and independently verified every
+import claim against bytes. **No structural blocker found: G0's
+technical bar is fully met; owner check-in before P1 is due.**
 
 ## Files Created
 
@@ -26,7 +26,8 @@ bar is met; owner check-in before P1 is now due.**
   short list of P2 pins.
 - `tools/transmute/mss_dump.c` — Mesen2 `.mss` decode oracle
   (container header, zlib payload, keyed record walk, chip-firewall
-  refuse; exit 0/1/2 = clean/malformed/refused).
+  refuse; `-x key` raw-extraction mode; exit 0/1/2/3 =
+  clean/malformed/refused/key-missing).
 - `tools/transmute/bst_dump.c` — bsnes `.bst` decode oracle
   (container, nall RLE<1>, header gates exactly as `unserialize`,
   full positional plain-cart walk at pinned widths for the
@@ -34,12 +35,18 @@ bar is met; owner check-in before P1 is now due.**
   firewall).
 - `tools/transmute/gen_fixtures.py` — deterministic synthetic
   container fixtures + sha256 manifest.
-- `tests/fixtures/transmute/` — 6 committed fixtures + manifest
-  (valid/chip-cart/truncated `.mss`; valid/sync0/chip-residual
-  `.bst`).
-- `tests/unit/transmute/test_dumpers.sh` — 22 assertions: builds both
+- `tests/fixtures/transmute/` — 6 synthetic container fixtures +
+  manifest (valid/chip-cart/truncated `.mss`; valid/sync0/
+  chip-residual `.bst`).
+- `tests/fixtures/transmute/stateprobe/` — REAL fixtures (s1
+  addendum, from SuperForge `de79be4`, CC0): `stateprobe.sfc` (32 KiB
+  LoROM), `stateprobe_manifest.json`, `genconfig.json`, and
+  `beacon_gen2.mss` — a live MesenRunner capture at the beacon, audit
+  generation 2.
+- `tests/unit/transmute/test_dumpers.sh` — 35 assertions: builds both
   oracles, fixture-manifest integrity, decode + planted-value spot
-  checks, dump stability, every refuse/gate path, usage errors.
+  checks, dump stability, every refuse/gate path, usage errors, and
+  the REAL-file oracle section (below).
 
 ## Files Modified
 
@@ -50,15 +57,19 @@ bar is met; owner check-in before P1 is now due.**
 
 ## Tests Written
 
-`tests/unit/transmute/test_dumpers.sh` — 22/22 green under
+`tests/unit/transmute/test_dumpers.sh` — 35/35 green under
 `busybox ash`, shellcheck clean, unprivileged-safe (mktemp under
-`$TMPDIR` only). Note the cross-check design: the fixture generator
-transcribes the byte layout from the mapping JSON, the dumpers
-transcribe it from the vendored serialize sources — the synthetic
-`.bst` walking to exactly zero residual (290,423/290,423 bytes)
-verifies the two independent transcriptions agree on every width.
-Semantic (emulator-produced) oracle fixtures arrive with the
-StateProbe import.
+`$TMPDIR` only). Two cross-check designs:
+- Synthetic: the fixture generator transcribes the byte layout from
+  the mapping JSON, the dumpers transcribe it from the vendored
+  serialize sources — the synthetic `.bst` walking to exactly zero
+  residual (290,423/290,423 bytes) verifies the two independent
+  transcriptions agree on every width.
+- Real: `mss_dump` over `beacon_gen2.mss` (an actual Mesen2 2.1.1
+  state) asserts header fields, record census, quiescent-rule fields,
+  ROM-hash-vs-manifest identity, and the RESULT_SCHEMA v1 block
+  (SPRB magic at WRAM `$7EF000`, beacon `$A5` at `$7EF7F0`) via
+  extraction mode.
 
 ## Pins
 
@@ -95,26 +106,61 @@ All citations are `path:line@pin` in `tools/transmute/vendor/`.
   SPC_DSP blob fixed 640 bytes (514 meaningful + zero pad;
   `SPC_DSP.h:61`, walk in `SPC_DSP.cpp:949-1016`).
 
+**MesenCore.so pin check — CLOSED (s1 addendum, s2-verified):** the
+captured state's `emuVersion` field reads `0x00020101` = 2.1.1, and
+the pinned tree declares exactly 2.1.1
+(`mesen2:Core/Shared/EmuSettings.cpp:135-142@pin`) — SuperForge's
+committed core and our vendored reference are the same version.
+
 ## Hypothesis ledger (spec §Hypotheses)
 
 | # | Verdict | Evidence |
 |---|---|---|
-| H1 (Mesen2 keyed) | **CONFIRMED** (s1) | `Serializer.h:255-283` — keyed records, unknown keys tolerated |
+| H1 (Mesen2 keyed) | **CONFIRMED** (s1) | `Serializer.h:255-283` — keyed records, unknown keys tolerated. s2: real 1344-record state parses cleanly with the independent C walker |
 | H2 (bsnes: no cothread stacks in normal states) | **CONFIRMED** (s1) | stacks only in `synchronize=false` rewind variant; `bst_dump` refuses those |
-| H3 (frame-edge captures) | **CONFIRMED w/ caveat** (s2) | see spec table; SPC700 sub-instruction state is the residual hazard, handled as a refuse-class |
+| H3 (frame-edge captures) | **CONFIRMED w/ caveat** (s2) | see spec table; SPC700 sub-instruction state is the residual hazard, handled as a refuse-class — and the first real beacon capture lands `spc.opStep=0` (instruction boundary), supporting the expectation that beacon captures rarely-to-never trip it |
 | H4 (CPU↔APU phase + DSP state are the top hazard) | OPEN → **NARROWED** (s2) | inventory shows both DSPs are the same blargg-lineage silicon model — `dsp_internal` maps nearly field-for-field (names align: NoiseLfsr↔noise, Counter↔counter, BrrNextAddress↔t_brr_next_addr, …). The remaining H4 core is CPU↔SMP relative phase (Thread.clock donor alignment) + SPC mid-instruction captures. P2 empirics (StateProbe v2/v3) quantify |
 | H5 (bsnes loader: format checks only) | **CONFIRMED** (s1) | 4 gates, no semantics; `bst_dump` mirrors them |
 | H6 (power-on donor viable) | STRENGTHENED (s1), unchanged | loader power-cycles before positional read |
-| H7 (ROM identity) | **REVISED** (s1) | neither format validates ROM identity; manifest sha256 is OUR discipline |
-| H8 (InteropDLL state exports) | **CONFIRMED** (s1) | StateProbe gate 3 |
+| H7 (ROM identity) | **REVISED** (s1) | neither format validates ROM identity; manifest sha256 is OUR discipline — now enforced in CI (test asserts committed ROM hash appears in the manifest) |
+| H8 (InteropDLL state exports) | **CONFIRMED** (s1) | StateProbe gate 3; s1-addendum used exactly those exports for the beacon capture |
 
 ## Container formats
 
-Pinned in session 1; now machine-readable in
+Pinned in session 1; machine-readable in
 `cms/mapping_mesen2_bsnes.json` §containers and executable in the two
-dumpers. One refinement landed in s2: the `.mss` payload's
-`[u8 isCompressed]` may legally be 0 (records to EOF, no size words)
-— `mss_dump` handles both.
+dumpers. s2 refinement: the `.mss` payload's `[u8 isCompressed]` may
+legally be 0 (records to EOF, no size words) — `mss_dump` handles
+both. **Survived contact with real bytes** (s1-addendum capture,
+s2-verified): MSS magic, emuVersion, formatVersion=4, consoleType=0,
+256×239 screenshot block, zlib framing, and the keyed record stream
+all decode at exactly the pinned offsets.
+
+## Real-capture verification record (s2, 2026-07-11)
+
+Independent verification of the s1-addendum import (project rule:
+byte-level claims get tested, not trusted):
+
+1. `sha256(stateprobe.sfc)` = `b324d2fc…dca902dc` = the manifest's
+   `rom.sha256` ✓
+2. `mss_dump beacon_gen2.mss` → exit 0, 1344 records, no coprocessor
+   keys; header: emuVersion 131329 (=2.1.1), format 4, console 0,
+   video 256×239, rom name `stateprobe.sfc` ✓
+3. Record census matches the mapping inventory exactly per domain:
+   cpu=18, memoryManager=10, controlManager=8, dmaController=143
+   (7 + 8×17), internalRegisters=34, spc=184, ppu=946, cart=1 ✓
+4. RESULT_SCHEMA v1 in extracted WRAM at `$7EF000`: magic `SPRB`,
+   schema 1, profile 0, build_id 54233 (= manifest), epoch 548,
+   audit generation 2, `PASS=RAN=0x00003F8F` (bits 4/5/6 clear = the
+   documented v0 blind spots), first-fail `$FF`, beacon `$A5` ✓
+5. SRAM mirror = WRAM block except `epoch` (545 vs 548) and the
+   checksum covering it — exactly the brief's "mirrored after every
+   completed audit pass" semantics (the WRAM epoch keeps ticking
+   between mirror and capture). Tests must never compare the two
+   blocks byte-for-byte; compare excluding epoch+checksum.
+6. Quiescent-rule empirics on a real capture: `spc.opStep=0`,
+   `spc.pendingCpuRegUpdate=0`, `cpu.k/pc` parked in ROM code ✓ —
+   first evidence the decode rules' happy path is the common case.
 
 ## Session-2 findings worth carrying (decode/encode design inputs)
 
@@ -132,14 +178,12 @@ dumpers. One refinement landed in s2: the `.mss` payload's
    state machine (`spc.opStep/opSubStep/tmp1-3`); bsnes is
    instruction-atomic. Decode rule (in mapping + CMS): refuse
    captures with the SPC mid-instruction (partial replay can
-   double-consume read-to-clear $FD-FF). P2 measures how often
-   beacon-parked captures hit this (expectation: rarely-to-never at
-   a StateProbe idle-loop beacon; Mesen2's own save path runs an SPC
-   catch-up first).
+   double-consume read-to-clear $FD-FF). First real data point:
+   beacon capture landed at opStep=0.
 4. **In-flight CPU→APU port writes** (`spc.pendingCpuRegUpdate` +
    staged values) are a Mesen2-only 1-cycle pipeline; quiescent rule
-   = must be false (StateProbe v0 guarantees), flush-rule validated
-   in P2 else refuse.
+   = must be false (StateProbe v0 guarantees; confirmed false in the
+   real capture), flush-rule validated in P2 else refuse.
 5. **htime transform**: bsnes stores `(dot+1)<<2` master-clock
    comparator (`sfc/cpu/io.cpp:204-215`); Mesen2 stores the raw dot
    (`InternalRegisters.cpp:352-360`). CMS canonicalizes the raw dot.
@@ -153,22 +197,13 @@ dumpers. One refinement landed in s2: the `.mss` payload's
    (Mesen2 `invertDirection`=bsnes `direction`, `decrement`=bsnes
    `reverseTransfer`, …) — names lie, bits don't.
 
-## Open Items (P0 remainder → P1 entry)
+## Open Items (P0 → P1 entry)
 
-1. **[BLOCKED] StateProbe fixture import** — `add_repo` for
-   `jreinach-alt/SuperForge` could not complete in this
-   non-interactive session (permission stream unavailable). Next
-   session with the owner present: add the repo, copy
-   `stateprobe.sfc` + manifest (+ genconfig) from branch
-   `claude/stateprobe-diagnostic-rom-em6jh2` @ `de79be4` into
-   `tests/fixtures/transmute/`, capture a beacon `.mss` via
-   MesenRunner, and re-run `mss_dump` over it (first REAL-file oracle
-   run; assert record keys match the mapping inventory).
-2. **[BLOCKED, same cause] MesenCore.so pin check** — compare its
-   version exports against the Mesen2 pin; rebuild via SuperForge
-   `scripts/build_mesen2.sh` if drifted.
+1. ~~StateProbe fixture import~~ **CLOSED** (s1 addendum `6611b6c`,
+   s2 merge + independent verification above).
+2. ~~MesenCore.so pin check~~ **CLOSED** — see Pins section.
 3. bsnes headless runner build (P1 critical path, unchanged).
-4. P2 pin list — now enumerated machine-readably in
+4. P2 pin list — enumerated machine-readably in
    `mapping_mesen2_bsnes.json` §open_p2_pins (OAM bit packing, SPC
    timer stage crosswalk, env_mode enums, dsp.step units, externalRegs
    semantics, io.irqEnable composite, interrupt truth table, donor
@@ -183,51 +218,55 @@ dumpers. One refinement landed in s2: the `.mss` payload's
   bsnes DEFAULT, our encoder emits only that layout, and the pilot
   pipeline never produces accurate-layout files. Recorded here as a
   scope decision, owner-visible.
-- Synthetic container fixtures added (not in the spec's file table,
-  which lists StateProbe fixtures): the SuperForge import is blocked
-  and the dumpers need committed test inputs. They complement — not
-  replace — the StateProbe fixtures.
+- Synthetic container fixtures added alongside the StateProbe ones
+  (not in the spec's file table): they exercise malformed/refuse
+  paths a valid capture never can. Complementary, both stay.
 
-## Session handoff — brief for the next session
+## Session handoff — brief for the next session (P1)
 
-Session 2 (2026-07-11, this branch) completed: small pins (fastPPU
-default, dsp.fast, runToSave, H3, serializer primitives), the full
-both-sides field inventory → `cms/cms_snes_v1.json` +
-`cms/mapping_mesen2_bsnes.json`, `mss_dump.c` + `bst_dump.c`,
-deterministic fixtures + 22-assertion test suite (all green).
+**P0 is COMPLETE and G0's technical bar is fully met:** both formats
+inventoried and classified, mapping committed, dumpers green over
+synthetic AND real fixtures, MesenCore pin aligned, no structural
+blocker. The identified hazards (SPC mid-instruction, in-flight port
+writes, interrupt pipelines, CPU↔SMP clock phase) all have documented
+rules/refuse paths; none is a load-path impossibility. **Owner
+check-in is the G0 gate — required before P1 spend.**
 
-**G0 status: technical bar MET** — both formats fully inventoried,
-every field classified, mapping committed, dumpers green over
-fixtures, no structural blocker found. The identified hazards (SPC
-mid-instruction, in-flight port writes, interrupt pipelines,
-CPU↔SMP clock phase) all have documented rules/refuse paths, none is
-a load-path impossibility. **Owner check-in is the G0 gate** — the
-spec mandates it before P1 spend. Also deliver to the owner: the
-fixture-import blocker (item 1 above) and the fastPPU-only decode
-scope decision.
+**Session-creation requirement (platform):** create the P1 session
+with BOTH `jreinach-alt/continuity` AND `jreinach-alt/SuperForge`
+selected as sources at creation. Mid-session repo adds are broken on
+this platform surface (the session's claude-code-remote MCP endpoint
+rejects approved calls; the desktop app's add-repo control only sends
+a chat message that depends on the same broken call — verified
+end-to-end 2026-07-11, bug reported by owner). P0 needed no
+SuperForge access thanks to the in-repo fixtures; P1's MesenRunner
+integration does.
 
 **Startup:** standard protocol → this file → `sh
 tools/transmute/fetch_refs.sh` (~2 min). Gate posture unchanged
 (spec §Gate posture). Model regimen: Fable-class (unchanged).
 
-**P1 order once G0 is acknowledged:** (1) unblock SuperForge items
-1-2 above; (2) bsnes headless runner (custom minimal target linking
-`sfc/` vs libretro build — timeboxed choice; must serialize
-byte-compatibly with the user-facing build: same SerializerVersion,
-fastPPU=true, same cart profile); (3) controls C1-C3; (4) donor
-capture + first `transmute_snes.c` decode pass against the real
-beacon `.mss`.
+**P1 order once G0 is acknowledged:** (1) bsnes headless runner
+(custom minimal target linking `sfc/` vs libretro build — timeboxed
+choice; must serialize byte-compatibly with the user-facing build:
+same SerializerVersion "115.1", fastPPU=true, same cart profile);
+(2) MesenRunner harness integration (SuperForge in scope; H8 exports
+already proven by the s1-addendum capture); (3) controls C1–C3
+(C2 partially banked: the beacon capture + StateProbe's own gate 3);
+(4) donor capture + first `transmute_snes.c` decode pass against
+`beacon_gen2.mss`.
 
-**Session-2 closeout gate: PASSED** — `scripts/gate.sh full`, 62/62
-both privilege passes (incl. the new transmute test in both) + both
-shipped-artifact integrity checks; qemu checks skipped (no
-`qemu-aarch64-static` in the web container; checksums still
-verified). First run failed 61/62 on the KNOWN flake below —
-reconfirmed passing in isolation (11/11) before the clean rerun,
+**Session-2 closeout gates: PASSED** — `scripts/gate.sh full` 62/62
+both privilege passes + both shipped-artifact integrity checks before
+the first push (qemu checks skipped: no `qemu-aarch64-static` in the
+web container; checksums still verified); rerun after the fixture
+merge with the real-file test additions (see git history for the
+final run result on this branch). First s2 gate run failed 61/62 on
+the KNOWN flake below — reconfirmed passing in isolation (11/11),
 same protocol as session 1.
 
 **Pre-existing flake (from session 1, still open for a mainline
 session):** `tests/integration/test_retrodeck_events_flow.sh` Phase 1
-fails intermittently under full-suite load (observed once this
-session, first gate run); passes in isolation every time. Untouched
-by this spike.
+fails intermittently under full-suite load (observed once in s2,
+first gate run); passes in isolation every time. Untouched by this
+spike.

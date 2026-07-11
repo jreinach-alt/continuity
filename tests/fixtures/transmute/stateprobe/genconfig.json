@@ -1,0 +1,246 @@
+{
+  "addresses": {
+    "beacon": "7EF7F0",
+    "beacon_value": "A5",
+    "capture_buffer": "7EF200",
+    "result_block": "7EF000",
+    "sram_mirror_offset": "0000"
+  },
+  "build_id": 54233,
+  "config": {
+    "echo": {
+      "payload_xor": 195,
+      "poll_bound": 1024
+    },
+    "grid": {
+      "col0": 2,
+      "col_stride": 3,
+      "domains": 14,
+      "per_row": 8,
+      "row0": 12
+    },
+    "htime": 256,
+    "math": {
+      "div_den": 29,
+      "div_num": 19335,
+      "m7a": 1523,
+      "m7b_byte": 123,
+      "mul_a": 93,
+      "mul_b": 55,
+      "wrio": 255
+    },
+    "oam_witness": [
+      {
+        "tile": 0,
+        "x": 16,
+        "y": 8
+      },
+      {
+        "tile": 1,
+        "x": 200,
+        "y": 24
+      },
+      {
+        "tile": 2,
+        "x": 120,
+        "y": 40
+      },
+      {
+        "tile": 3,
+        "x": 60,
+        "y": 52
+      }
+    ],
+    "ppu": {
+      "bg12nba": 33,
+      "bg1hofs": 5,
+      "bg1sc": 0,
+      "bg1vofs": 2,
+      "bg2sc": 4,
+      "bgmode": 1,
+      "cgadsub": 65,
+      "cgwsel": 0,
+      "coldata_writes": [
+        156,
+        40,
+        64
+      ],
+      "inidisp": 15,
+      "obsel": 2,
+      "tm": 19,
+      "tmw": 1,
+      "ts": 0,
+      "w12sel": 2,
+      "wh0": 88,
+      "wh1": 168,
+      "wram_port_addr": [
+        0,
+        243,
+        0
+      ]
+    },
+    "profile": 0,
+    "sabotage": {
+      "cgram_byte": 304,
+      "xor": 90
+    },
+    "schema_version": 1,
+    "seeds": {
+      "aram": 105,
+      "cgram": 195,
+      "dma": 17,
+      "oam": 150,
+      "sram": 60,
+      "vram": 167,
+      "wram": 90
+    },
+    "tone": {
+      "gain": 40,
+      "mvol": 48,
+      "pitch": 4096,
+      "vol": 40
+    },
+    "vtime": 192,
+    "witness_prng_seed": 305441741
+  },
+  "domains": [
+    "WRAM",
+    "VRAM",
+    "CGRAM",
+    "OAM",
+    "ARAM",
+    "DSP",
+    "SPC_TIMERS_PORTS",
+    "SRAM",
+    "CPU_MATH",
+    "IRQ_NMI_CADENCE",
+    "HV_LATCH",
+    "MAILBOX",
+    "DMA_RESIDUE",
+    "EPOCH_CONTINUITY"
+  ],
+  "expected": {
+    "beacon_max_frames": 300,
+    "epochs_per_pass": 272,
+    "gen1_max_frames": 700,
+    "gen2_max_frames": 1000,
+    "ran_pass_bitmap_full": 16271,
+    "ran_pass_bitmap_gen1": 8079
+  },
+  "grid_cells_px": {
+    "0": {
+      "h": 16,
+      "px_x": 16,
+      "px_y": 96,
+      "w": 16
+    },
+    "1": {
+      "h": 16,
+      "px_x": 40,
+      "px_y": 96,
+      "w": 16
+    },
+    "10": {
+      "h": 16,
+      "px_x": 64,
+      "px_y": 112,
+      "w": 16
+    },
+    "11": {
+      "h": 16,
+      "px_x": 88,
+      "px_y": 112,
+      "w": 16
+    },
+    "12": {
+      "h": 16,
+      "px_x": 112,
+      "px_y": 112,
+      "w": 16
+    },
+    "13": {
+      "h": 16,
+      "px_x": 136,
+      "px_y": 112,
+      "w": 16
+    },
+    "2": {
+      "h": 16,
+      "px_x": 64,
+      "px_y": 96,
+      "w": 16
+    },
+    "3": {
+      "h": 16,
+      "px_x": 88,
+      "px_y": 96,
+      "w": 16
+    },
+    "4": {
+      "h": 16,
+      "px_x": 112,
+      "px_y": 96,
+      "w": 16
+    },
+    "5": {
+      "h": 16,
+      "px_x": 136,
+      "px_y": 96,
+      "w": 16
+    },
+    "6": {
+      "h": 16,
+      "px_x": 160,
+      "px_y": 96,
+      "w": 16
+    },
+    "7": {
+      "h": 16,
+      "px_x": 184,
+      "px_y": 96,
+      "w": 16
+    },
+    "8": {
+      "h": 16,
+      "px_x": 16,
+      "px_y": 112,
+      "w": 16
+    },
+    "9": {
+      "h": 16,
+      "px_x": 40,
+      "px_y": 112,
+      "w": 16
+    }
+  },
+  "math_expected": {
+    "div_q": 666,
+    "div_r": 21,
+    "m7_product": 187329,
+    "mul": 5115,
+    "residue_rddiv": 55
+  },
+  "sabotage_expected": {
+    "actual": 172,
+    "addr": 304,
+    "domain": 2,
+    "expected": 246
+  },
+  "spc": {
+    "block_len": 512,
+    "dest": 512,
+    "dir_page": 3,
+    "entry": 640,
+    "fill_start": 1024
+  },
+  "stream_lengths": {
+    "mstream": 272,
+    "vstream": 257
+  },
+  "witness_region_px": {
+    "h": 64,
+    "w": 256,
+    "x": 0,
+    "y": 0
+  }
+}

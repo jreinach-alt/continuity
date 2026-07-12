@@ -28,3 +28,7 @@ Thumbs.db
 build/*
 !build/Continuity.pak/
 !build/Continuity-muos.app/
+
+# Python bytecode (spike harness)
+__pycache__/
+*.pyc

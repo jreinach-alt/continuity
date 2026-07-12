@@ -10,8 +10,28 @@ BusyBox-constrained, never shipped to a device, `src/**` untouched.
 |---|---|---|
 | `mesen_state.py` | Spike-local `MesenRunner` subclass adding `.mss` save/load over the InteropDLL `SaveStateFile`/`LoadStateFile` exports; SuperForge locator; `HarnessUnavailable` skip signal | P1 ✓ |
 | `stateprobe.py` | StateProbe RESULT_SCHEMA v1 reader + audit predicate, driven entirely by the committed fixture manifest (no hardcoded offsets) | P1 ✓ |
-| `controls.py` | Validity controls C1–C4 CLI. C2 (Mesen2 native round-trip) implemented; C1/C3 land with the bsnes runner, C4 with the first decode pass | C2 ✓ |
-| `bsnes_runner.py` | Python wrapper over the compiled bsnes headless runner | pending |
+| `bsnes_host.cpp` | Headless libretro driver: boots a ROM, save/loads byte-compatible `.bst` (12-byte header + nall RLE<1> payload, reproduced from the desktop path) | P1 ✓ |
+| `build_bsnes_host.sh` | Builds the pinned bsnes libretro core + compiles `bsnes_host` into `build/` (gitignored) | P1 ✓ |
+| `bst.py` | Python `.bst` container + RLE<1> codec (mirror of the host, byte-verified against it); payload layout incl. the `random.state` internal-field mask | P1 ✓ |
+| `bsnes_runner.py` | Python wrapper over the compiled bsnes host (save / reload / check) | P1 ✓ |
+| `controls.py` | Validity controls C1–C4 CLI. C1/C2/C3 implemented; C4 lands with the first `transmute_snes.c` decode pass | C1/C2/C3 ✓ |
+
+## The bsnes headless runner (P1 build risk — resolved)
+
+The spike drives bsnes through the **libretro core** (the headless
+boundary bsnes already ships): `retro_serialize` returns the raw
+`System::serialize()` payload, and the runner wraps it in the exact
+desktop `.bst` container (`target-bsnes/program/states.cpp`) using a
+faithful transcription of nall's RLE<1>. Result: states written here are
+byte-identical to what bsnes itself writes — verified two ways, by the P0
+`bst_dump` oracle decoding them to zero residual and by the real bsnes
+core loading them. `bsnes_ppu_fast=ON` and `bsnes_entropy=None` are forced
+(fastPPU matches the user-facing build; entropy=None makes states
+deterministic without changing the format — the `random` block is an
+internal field either way).
+
+Build once: `sh tools/transmute/harness/build_bsnes_host.sh` (~2-4 min for
+the core). Needs the vendored bsnes tree (`fetch_refs.sh`) + g++ (C++17).
 
 ## The Mesen2 state bindings (spike-local, open question 4)
 
@@ -38,6 +58,24 @@ Exit codes: `0` pass · `1` fail · `77` skip (emulator dependency absent).
 The committed gate wrapper `tests/unit/transmute/test_controls_mesen.sh`
 turns exit 77 into a clean skip so the mainline gate (which has no
 MesenCore) stays green, and turns exit 1 into a loud failure.
+
+## C1 — bsnes native `.bst` round-trip (control, must pass)
+
+Gold-standard state-transfer proof: a `.bst` saved by bsnes at frame N,
+reloaded into a **fresh** bsnes core and advanced K frames, reconstructs
+the exact architectural state of a native run straight to N+K — the only
+divergence being bsnes's per-boot PRNG seed (`random.state`, payload bytes
+[542,550)), which the CMS classifies emulator-internal and never
+translates. Also checks: the state loads without rejection, the emulator
+is demonstrably live (A ≠ B), and the load+advance path is deterministic.
+
+## C3 — corrupted `.bst` rejected (control, must fail loudly)
+
+A both-directions oracle check: a valid state is accepted, and a battery
+of corruptions that hit real load-path gates — container signature,
+container size, serializer signature, version string, `serializeSize`,
+empty/truncated — are each rejected. Proves the bsnes oracle is neither a
+rubber stamp nor a blanket rejector.
 
 ## C2 — Mesen2 native `.mss` round-trip (control, must pass)
 

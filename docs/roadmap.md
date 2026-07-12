@@ -497,8 +497,8 @@ as undo — unlike saves). Cross-emulator tier: see
 `docs/design/state-transmutation.md` (R&D framework, perpetually
 experimental; repo-side compute via the Continuity Transmuter).
 
-**Spike T2.0 — ACTIVE (approved 2026-07-11), P0 complete pending G0
-check-in:** decisive rule-in/rule-out experiment for the
+**Spike T2.0 — ACTIVE (approved 2026-07-11), P1 harness substantially
+complete (gate G1 MET):** decisive rule-in/rule-out experiment for the
 cross-emulator tier — executes the transmutation doc's kill criterion
 on the deliberately-favorable pilot pair Mesen2 → bsnes, SNES, plain
 carts only. Deliverable is a verdict with evidence, not a feature;
@@ -506,11 +506,18 @@ SRAM contract untouched either way. Primary instrument (StateProbe v0
 diagnostic ROM) delivered by SuperForge and review-verified. P0
 format archaeology done: both formats fully inventoried + classified
 (`tools/transmute/cms/`), decode oracles green over fixtures,
-H1/H2/H3/H5/H8 confirmed, **no structural blocker found**. Awaiting
-owner G0 check-in before P1 (harness); StateProbe fixture import
-rides on SuperForge repo access. Spec:
-`docs/sprints/spike-t2.0-snes-spec.md`; running ledger + next-session
-brief: `docs/sprints/spike-t2.0-summary.md`.
+H1/H2/H3/H5/H8 confirmed, **no structural blocker found**. P1 (session
+3, 2026-07-12): bsnes headless runner built (libretro, byte-compatible
+`.bst` verified by bst_dump zero-residual + real-core load), Mesen2
+state bindings, and all four validity controls **C1–C4 green** —
+same-core round-trips both sides, corrupted-state rejection, and a
+first-pass live WRAM decode+inject (decode byte-verified against
+MesenCore ground truth). C1 shows a bsnes state reload reconstructs a
+native run byte-for-byte except the internal PRNG seed — the
+decompose/resynthesize thesis, seen working. Next: bind
+`SetCpuState`/`SetPpuState` for full behavioural C4, then P2 donor
+encode (G2/G3). Spec: `docs/sprints/spike-t2.0-snes-spec.md`; running
+ledger + next-session brief: `docs/sprints/spike-t2.0-summary.md`.
 
 ## Sync robustness backlog (gap review 2026-07-07)
 

@@ -1,5 +1,11 @@
 # Spike T2.0 — Running Summary / Findings Ledger
 
+**Status: P1 (harness) SUBSTANTIALLY COMPLETE — gate G1 met.** Session 3
+(2026-07-12, branch `claude/spike-t2-continuation-u35uat`) built the
+bsnes headless runner (the P1 build risk — resolved), the Mesen2 state
+bindings, and all four validity controls C1–C4 green. Details in
+"## Session 3 — P1 (harness + controls C1–C4)" below.
+
 **Status: P0 (format archaeology) COMPLETE** — session 2 (2026-07-11,
 continuation branch `claude/spike-t2-continuation-4ejjew`) delivered
 the full field inventory, the CMS mapping tables, both decode
@@ -8,6 +14,119 @@ oracles, and their test suite; session 1 (post-closeout addendum,
 beacon `.mss`; session 2 merged and independently verified every
 import claim against bytes. **No structural blocker found: G0's
 technical bar is fully met; owner check-in before P1 is due.**
+
+---
+
+## Session 3 — P1 (harness + controls C1–C4)
+
+**Branch:** `claude/spike-t2-continuation-u35uat` (continuity + SuperForge).
+G0 acknowledged by the owner's instruction to proceed to P1.
+
+**Gate G1 verdict: MET.** Same-core round-trips pass both sides, the
+live-injection control passes on the WRAM domain, and the corrupted-state
+control fails loudly. All four controls are committed, runnable, and
+skip-safe (they SKIP, never FAIL, where the emulator deps are absent — so
+the mainline gate stays green).
+
+### Controls — all green
+
+| Ctrl | What | Result |
+|---|---|---|
+| **C1** | bsnes native `.bst` → fresh bsnes, advance K → reconstructs a native run to N+K **byte-for-byte except the internal PRNG seed** (`random.state`) | PASS — load accepted, emulation live, reload deterministic |
+| **C2** | Mesen2 native `.mss` → Mesen2: save at gen-2 audit (PASS=0x3F8F), advance (epoch ticks), reload → **beacon epoch rewinds**, audit still passes | PASS |
+| **C3** | corrupted/truncated `.bst` → bsnes: container-sig / container-size / serializer-sig / version / serializeSize / empty / truncated all **rejected**; valid accepted | PASS (both directions) |
+| **C4** | CMS decode → live re-inject (WRAM domain, first pass) | PASS — see below |
+
+### The bsnes headless runner (P1 build risk — RESOLVED)
+
+- **Chosen path: the vendored libretro core** (the headless boundary bsnes
+  already ships). `retro_serialize` returns the raw `System::serialize()`
+  payload; our `bsnes_host.cpp` wraps it in the exact desktop `.bst`
+  container (12-byte header + nall RLE<1>, transcribed from
+  `target-bsnes/program/states.cpp` + `nall/encode/rle.hpp` @ pin).
+- **Byte-compatibility proven two ways:** the P0 `bst_dump` oracle walks
+  our `.bst` to **zero residual**, and the real bsnes core loads it.
+- **fastPPU=true confirmed** (`bsnes_ppu_fast=ON`, and `header.fastppu=1`
+  in every state); `SerializerVersion "115.1"` matches.
+- **Build:** `make target=libretro platform=linux local=false` (~2–4 min,
+  built clean at pin `7d5aa1e`). Wrapped by
+  `tools/transmute/harness/build_bsnes_host.sh`.
+
+### Findings worth carrying (P1)
+
+1. **P0 bst_dump oracle validated against a REAL bsnes state.** bst_dump
+   was written in P0 from vendored serializer source against *synthetic*
+   fixtures (bsnes couldn't be built then). It now walks a real
+   bsnes-produced state to exactly zero residual — the entire P0 bsnes
+   field inventory is confirmed against reality. **Usage note:** StateProbe
+   carries 8 KiB battery SRAM, so real StateProbe states need
+   `bst_dump -s 8192` (else 8192 residual bytes → refuse; not a bug).
+2. **C1 validates the decompose/resynthesize thesis on the target side.**
+   A bsnes state reloaded into a fresh core and advanced K frames matches a
+   native run to N+K on **every byte except `random.state`** (payload
+   [542,550)), bsnes's per-boot PRNG seed — exactly the CMS
+   "emulator-internal, never translated" class. That is the physics the
+   spike is testing, seen working.
+3. **bsnes power-on entropy is a single 8-byte field.** With
+   `bsnes_entropy=None` (deterministic; format-identical — the `random`
+   block is internal either way, size/layout unchanged, unserialize never
+   checks its values), two fresh boots differ ONLY in `random.state`. The
+   load path itself is fully deterministic.
+4. **Decode-vs-ground-truth (C4a):** the WRAM `mss_dump -x
+   memoryManager.workRam` pulls from a `.mss` is **byte-identical**
+   (crc-verified) to the live MesenCore's WRAM at capture. The decode
+   recovers exactly what Mesen serialized — validated against Mesen itself.
+5. **Live memory injection works (C4b):** `MesenRunner.write_bytes`
+   (`SetMemoryValues`) transplants the decoded 128 KiB WRAM into a
+   different parked core; it reads back as the captured self-audit.
+6. **Register injection is the next primitive.** `SetCpuState` /
+   `SetPpuState` / `SetMemoryState` are exported by the committed
+   MesenCore.so but NOT yet bound in MesenRunner. Full behavioural-
+   continuation C4 (run the injected core, require it to match a native
+   load) needs them + decode of VRAM/CGRAM/OAM/SRAM. That is the P2 entry.
+7. **H8 bindings kept spike-local (open question 4).** Rather than merge
+   the SuperForge StateProbe branch, `harness/mesen_state.py` subclasses
+   whatever `MesenRunner` is on the SuperForge checkout and adds
+   `save_state_file`/`load_state_file` — faithful to the verified `de79be4`
+   implementation. No SuperForge tree change; P1 has no branch dependency.
+
+### Files created (session 3)
+
+- `tools/transmute/harness/mesen_state.py` — spike-local `MesenRunner`
+  subclass (`.mss` save/load), SuperForge locator, `HarnessUnavailable`.
+- `tools/transmute/harness/stateprobe.py` — manifest-driven RESULT_SCHEMA
+  v1 reader + audit predicate.
+- `tools/transmute/harness/bsnes_host.cpp` — headless libretro driver +
+  byte-compatible `.bst` container.
+- `tools/transmute/harness/build_bsnes_host.sh` — core + host build.
+- `tools/transmute/harness/bst.py` — Python `.bst`/RLE codec (byte-verified
+  against the host) + internal-field mask.
+- `tools/transmute/harness/bsnes_runner.py` — Python wrapper over the host.
+- `tools/transmute/harness/controls.py` — controls C1–C4 CLI.
+- `tools/transmute/harness/README.md` — harness charter.
+- `tests/unit/transmute/test_controls_mesen.sh` — C2 + C4 gate (skip-safe).
+- `tests/unit/transmute/test_controls_bsnes.sh` — C1 + C3 + real-state
+  bst_dump walk (skip-safe).
+
+### Toolchain deps installed this session
+
+`libsdl2-2.0-0` (MesenCore.so runtime), `shellcheck` (gate). No
+`qemu-aarch64-static` in the web container (gate's qemu checks skip; spike
+is exempt anyway — no committed binaries).
+
+### Next session (P1 finish → P2 entry)
+
+1. **Bind `SetCpuState`/`SetPpuState` in the harness** and extend the
+   decode to VRAM/CGRAM/OAM/SRAM/APU → **full behavioural C4** (run the
+   injected core, require continuation identical to a native load). This
+   also answers spike Question A (is the decomposition complete?) directly.
+2. **P2 donor encode (G2/G3):** power-on bsnes donor `.bst`, overwrite
+   architectural fields from CMS, emit; first rebuilt state must LOAD
+   (G2), then StateProbe v0 all-domain pass on quiescent transfer (G3).
+   Formalize the decode in `tools/transmute/transmute_snes.c` (the P1 pass
+   currently uses `mss_dump -x` as the decode primitive).
+3. **Tier-2 confirmation games** (owner-local): SMW, FF3/FF6, +1 stresser,
+   Star Fox as the chip-firewall negative control.
 
 ## Files Created
 

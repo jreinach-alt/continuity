@@ -1,5 +1,13 @@
 # Spike T2.0 — Running Summary / Findings Ledger
 
+**Status: P1 COMPLETE (gate G1 met, full-behavioural C4 landed); P2
+ENTERED — gate G2 MET, G3 partial with a named root cause.** Session 4
+(2026-07-12, branch `claude/spike-t2-continuation-oqroko`) bound the
+CPU/PPU register-injection API, extended the decode to every architectural
+memory domain, upgraded C4 to the full behavioural transplant-vs-native
+test, and built the P2 donor-encoder reaching G2. Details in "## Session 4
+— P1 finish (full C4) + P2 entry (G2/G3)" below.
+
 **Status: P1 (harness) SUBSTANTIALLY COMPLETE — gate G1 met.** Session 3
 (2026-07-12, branch `claude/spike-t2-continuation-u35uat`) built the
 bsnes headless runner (the P1 build risk — resolved), the Mesen2 state
@@ -14,6 +22,135 @@ oracles, and their test suite; session 1 (post-closeout addendum,
 beacon `.mss`; session 2 merged and independently verified every
 import claim against bytes. **No structural blocker found: G0's
 technical bar is fully met; owner check-in before P1 is due.**
+
+---
+
+## Session 4 — P1 finish (full behavioural C4) + P2 entry (G2/G3)
+
+**Branch:** `claude/spike-t2-continuation-oqroko` (continuity only; no
+SuperForge tree change — `mesen_state.py` still subclasses SuperForge's
+`MesenRunner` without touching it, per open-question-4). Env: `fetch_refs.sh`
++ `build_bsnes_host.sh` (both pins built clean), `libsdl2` + `shellcheck` +
+`busybox-static`. Gate posture: spike-disabled (unchanged).
+
+### P1 FINISH — full behavioural C4 (Question A answered: YES for v0 domains)
+
+The P1 ledger's "next session" item 1 is done. C4 is no longer WRAM-only; it
+is the full architectural transplant-vs-native-load test.
+
+**Register-injection API bound** (summary finding 6 closed). `mesen_state.py`
+now binds `Get/SetCpuState` + `Get/SetPpuState` over the committed
+MesenCore.so exports (verified present via `nm -D`). `SnesCpuState` is a
+ctypes struct transcribed field-for-field from the pinned header
+(`SnesCpuTypes.h:12` over empty `BaseState` — no vtable, begins at
+`CycleCount`@0); `Debugger::SetCpuState` for `CpuType::Snes` is a whole-struct
+`memcpy` (`Debugger.cpp:858`), so injecting the struct sets every CPU field at
+once. PPU is bound as an opaque `_PPU_STATE_BUF_SIZE` buffer (Get→Set round-
+trips the whole register file without needing `sizeof(SnesPpuState)`).
+
+**Decode extended to every architectural memory domain** (`cms_decode.py`).
+Ground-truth record keys (from `mss_dump` on the real beacon, not guessed):
+`memoryManager.workRam`, `ppu.vram`, `ppu.oamRam`, `ppu.cgram`,
+`cart.saveRam`, `spc.ram`; CPU from the 17 `cpu.*` scalar records → the
+struct (`cpu.waiOver` is serialized but is NOT a `SnesCpuState` member, so it
+is out of reach of `SetCpuState` — a recorded gap, immaterial at frame-edge).
+
+**C4 (now, all gating checks green):**
+- **C4a decode completeness (vs Mesen ground truth):** all six memory domains
+  are byte-identical to the live core's region at capture; the CPU record
+  transcodes field-exact to `GetCpuState` (CycleCount excepted — free-running
+  emulator-internal). Reads live BEFORE save (ordering matters — a
+  read-after-save shows a benign 1-frame skew, not a decode error).
+- **C4b architectural sufficiency:** transplanting {file-decoded memory +
+  file-decoded CPU + the PPU register file via `SetPpuState`} into a
+  DIFFERENT parked core makes its StateProbe continuation match a native
+  `LoadStateFile` — same full pass bitmap `0x3F8F`, same beacon, both
+  progressed. Timing PHASE differs (epoch off by ~2 ticks) — expected and
+  explicitly not the bar.
+
+**Findings worth carrying (C4):**
+1. **The PPU register file is architecturally LOAD-BEARING, empirically.**
+   A memory+CPU-only transplant (PPU left un-injected) fails exactly one
+   StateProbe domain — bit 9 (`0x3F8F & ~0x3D8F = 0x200`). Injecting the PPU
+   closes it. This is field-level attribution: `SetPpuState` is not cosmetic.
+2. **That partial-transplant result is NONDETERMINISTIC by construction** —
+   the target boots the same ROM under RANDOM power-on (Mesen
+   `RamState::Random`, re-seeded per boot), so its own PPU is sometimes close
+   enough that every domain passes anyway. Recorded as evidence, never gated;
+   the deterministic story is "full injection → deterministic pass; leaving
+   PPU to the boot RNG → domain 9 left to chance."
+3. **The capture CPU parks in WAI** (`cpu.stopState = 2 = WaitingForIrq`,
+   `pc = 0x8135`) — the decode recovers it exactly; `SetCpuState` restores the
+   WAI so the injected core resumes waiting for the same NMI.
+
+### P2 ENTRY — donor-encode gates (G2 MET, G3 partial + root cause)
+
+Reached the P1-ledger "next session" item 2's first gate. `encode_bsnes.py`
+boots a **power-on bsnes donor** (`bsnes_host save --frames 0`, `fastppu=1`),
+overwrites its architectural fields from the CMS decode of the committed
+quiescent `beacon_gen2.mss`, and re-wraps. `bst_dump` gained an additive
+`-O` **offset-map mode** (`offset\tlength\tname` for every field; default
+output unchanged — C1/C3 + the zero-residual walk still green) so the encoder
+locates each domain in the payload without re-deriving the serialize walk.
+
+**G2 — MET.** The rebuilt cross-emulator state LOADS in bsnes (`check` →
+`RC_OK`), and a byte-mangled rebuilt is rejected (`RC_REJECTED`) — the gate is
+not a rubber stamp. Overwritten this pass: the raw byte-array domains
+(WRAM/VRAM/CGRAM/SRAM/ARAM) + the 65C816 register file (pinned transform:
+`wdc.pc=(pbr<<16)|pc`, PS-byte flag unpack, `stopState→wai/stp`).
+
+**G3 — NOT yet demonstrated (partial, with a named root cause).** The
+memory+CPU-only transfer does **not** produce a continuable execution: run
+forward in bsnes, StateProbe's beacon epoch stays FROZEN at the injected
+value (548) across 100/900/2500 frames. **Tautology guard (critical):** the
+RESULT block lives in WRAM, which the encoder overwrites — so a "passing"
+bitmap read straight back proves nothing. G3 requires the epoch to ADVANCE
+(live re-audit). Verified two-sided: a native Mesen load of the same beacon
+advances the epoch 552→1453 over 900 frames; native bsnes StateProbe advances
+112→512→1112 and reaches `0x3F8F` on its own — so the frozen transplant is a
+genuine negative, not a StateProbe halt.
+**Root cause (field-level):** the deferred register-file domains — PPU
+register file, SMP/SPC700 regs, DSP blob, structured OAM, and CPU I/O timing
+(`nmiEnable`, PPU counters) — are at the donor's power-on values, inconsistent
+with the transferred CPU/memory; the WAI never resumes into a healthy audit.
+This is exactly C4's "PPU is load-bearing" finding, extended: the APU/timing
+register files are load-bearing too. Those transforms (the mapping JSON pins
+them) are the transmute_snes.c body and the direct G3 path.
+
+### Files created (session 4)
+
+- `tools/transmute/harness/cms_decode.py` — CMS decode from a `.mss`:
+  all-domain memory extraction + CPU-record → `SnesCpuState` transcode
+  (`mss_dump -x` primitive).
+- `tools/transmute/harness/encode_bsnes.py` — donor-template bsnes `.bst`
+  encoder: overwrite architectural domains over a power-on donor, re-wrap.
+- `tools/transmute/harness/gates_p2.py` — G2/G3 driver (donor → encode →
+  load → advance-gated audit readback), tautology-guarded.
+- `tests/unit/transmute/test_gates_p2.sh` — G2/G3 gate (skip-safe).
+
+### Files modified (session 4)
+
+- `tools/transmute/harness/mesen_state.py` — `SnesCpuState` struct +
+  `Get/SetCpuState`, `Get/SetPpuState`, `write_region` bindings.
+- `tools/transmute/harness/controls.py` — C4 rewritten to full behavioural
+  (all-domain decode-completeness + transplant-vs-native continuation +
+  non-gating PPU-load-bearing diagnostic).
+- `tools/transmute/bst_dump.c` — additive `-O` offset-map mode.
+- `tests/unit/transmute/test_controls_mesen.sh` — C4 comment refreshed.
+
+### Next session (G3)
+
+1. **Implement the register-file transforms** (the mapping JSON pins each):
+   PPU register file, SMP/SPC700 regs, DSP blob (blargg `copy_state` order),
+   and the structured OAM table→object transform — overwrite these in the
+   donor alongside memory+CPU, then G3's epoch must advance and reach
+   `0x3F8F` on a live bsnes re-audit. Start with PPU + CPU-I/O timing
+   (`nmiEnable`, htime/vtime, PPU counters) — C4 proved PPU is the first
+   load-bearing gap; the WAI-resume needs the NMI timing consistent.
+2. **Formalize the decode/encode in `tools/transmute/transmute_snes.c`**
+   (spec file table) — the Python encoder is the P1-style oracle-driven
+   stand-in; the C tool is the shipping pipeline.
+3. **Then Tier-2 confirmation games** (owner-local) once G3 lands.
 
 ---
 

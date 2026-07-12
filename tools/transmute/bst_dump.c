@@ -49,6 +49,12 @@ static void die(const char *msg)
 static const uint8_t *g_data;
 static size_t g_size, g_pos;
 
+/* Offset-map mode (-O): emit "offset\tlength\tname" for every field instead
+ * of decoded values, so an encoder (transmute_snes.c / the Python encoder)
+ * can locate each architectural domain's byte range in the payload without
+ * duplicating this positional walk. Additive: default output is unchanged. */
+static int g_offmode = 0;
+
 static const uint8_t *take(size_t n, const char *path)
 {
     if (g_pos + n > g_size) {
@@ -63,18 +69,27 @@ static const uint8_t *take(size_t n, const char *path)
 
 static uint64_t uint_field(const char *path, unsigned bytes)
 {
+    size_t off = g_pos;
     const uint8_t *p = take(bytes, path);
     uint64_t v = 0;
     for (unsigned i = 0; i < bytes; i++)
         v |= (uint64_t)p[i] << (8 * i);
-    printf("%s = 0x%llx (%llu)\n", path, (unsigned long long)v,
-           (unsigned long long)v);
+    if (g_offmode)
+        printf("%zu\t%u\t%s\n", off, bytes, path);
+    else
+        printf("%s = 0x%llx (%llu)\n", path, (unsigned long long)v,
+               (unsigned long long)v);
     return v;
 }
 
 static void array_field(const char *path, size_t bytes)
 {
+    size_t off = g_pos;
     const uint8_t *p = take(bytes, path);
+    if (g_offmode) {
+        printf("%zu\t%zu\t%s\n", off, bytes, path);
+        return;
+    }
     uLong crc = crc32(0L, p, bytes);
     printf("%s : %zu bytes crc32=%08lx\n", path, bytes, (unsigned long)crc);
 }
@@ -366,14 +381,16 @@ int main(int argc, char **argv)
             sram = (size_t)strtoul(argv[++a], NULL, 0);
         } else if (strcmp(argv[a], "-H") == 0) {
             header_only = 1;
+        } else if (strcmp(argv[a], "-O") == 0) {
+            g_offmode = 1;
         } else if (!path) {
             path = argv[a];
         } else {
-            die("usage: bst_dump [-s sram_bytes] [-H] file.bst");
+            die("usage: bst_dump [-s sram_bytes] [-H | -O] file.bst");
         }
     }
     if (!path)
-        die("usage: bst_dump [-s sram_bytes] [-H] file.bst");
+        die("usage: bst_dump [-s sram_bytes] [-H | -O] file.bst");
 
     FILE *f = fopen(path, "rb");
     if (!f) {

@@ -141,6 +141,149 @@ def _read(path):
         return fh.read()
 
 
+def _ensure_mss_dump():
+    """Compile the mss_dump decode oracle into build/, return its path.
+
+    Raises HarnessUnavailable if it can't be built (no cc / no zlib) so C4
+    skips cleanly. mss_dump IS the decode primitive for P1's first pass;
+    transmute_snes.c formalizes the full decode->CMS->encode pipeline in P2.
+    """
+    import shutil
+    import subprocess
+
+    transmute = os.path.abspath(os.path.join(_HERE, ".."))
+    build_dir = os.path.join(transmute, "build")
+    os.makedirs(build_dir, exist_ok=True)
+    out = os.path.join(build_dir, "mss_dump")
+    src = os.path.join(transmute, "mss_dump.c")
+    if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(src):
+        return out
+    cc = shutil.which("gcc") or shutil.which("cc")
+    if not cc:
+        raise HarnessUnavailable("no C compiler for mss_dump")
+    proc = subprocess.run(
+        [cc, "-std=c99", "-O2", "-o", out, src, "-lz"],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise HarnessUnavailable(f"mss_dump build failed: {proc.stderr.strip()}")
+    return out
+
+
+def _extract_record(mss_dump, mss_path, key):
+    import subprocess
+    proc = subprocess.run(
+        [mss_dump, "-x", key, mss_path], capture_output=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"extract {key} failed (rc={proc.returncode})")
+    return proc.stdout
+
+
+def control_c4(baseline_frames: int = 1000, other_frames: int = 1300) -> dict:
+    """C4 — CMS decode -> live re-injection into a parked Mesen2 core.
+
+    Isolates "is the architectural decomposition complete?" from "can we
+    synthesize bsnes's format?" (spec §method upgrade). This first pass
+    proves the two load-bearing halves of live injection on the WRAM
+    domain:
+
+      (a) DECODE CORRECTNESS vs ground truth: the WRAM the decode oracle
+          pulls out of a `.mss` is byte-identical to the live core's WRAM
+          at the instant that `.mss` was captured — the decode recovers
+          exactly what Mesen serialized, tested against Mesen itself.
+      (b) LIVE INJECTION: that decoded WRAM, written into a DIFFERENT
+          parked core via write_bytes, reads back as the captured state's
+          self-audit (magic + PASS bitmap + beacon), not the other core's
+          — the architectural memory transplanted cleanly.
+
+    Full behavioural-continuation C4 (run the injected core, require it to
+    match a native load) additionally needs CPU/PPU register injection via
+    SetCpuState/SetPpuState (exports present; not yet bound in MesenRunner)
+    — the documented next step. This pass establishes decode + memory
+    injection under the same harness.
+    """
+    schema = sp.StateProbeSchema()
+    mss_dump = _ensure_mss_dump()
+
+    result = {
+        "control": "C4",
+        "description": "CMS decode -> live re-inject (WRAM domain)",
+        "must": "pass",
+        "evidence": {},
+    }
+    try:
+        runner, mem = new_state_runner()
+    except HarnessUnavailable:
+        raise
+    except Exception as exc:
+        raise HarnessUnavailable(f"Mesen2 core bring-up failed: {exc!r}") from exc
+
+    tmpdir = tempfile.mkdtemp(prefix="c4_", dir=os.environ.get("TMPDIR"))
+    cap = os.path.join(tmpdir, "c4_cap.mss")
+    try:
+        # --- (a) capture + decode-correctness -------------------------------
+        runner.load_rom(sp.ROM_PATH, run_seconds=0.0)
+        runner.run_frames(baseline_frames)
+        wram_live = bytes(runner.read_region(mem.SnesWorkRam))
+        runner.save_state_file(cap)
+        wram_ext = _extract_record(mss_dump, cap, "memoryManager.workRam")
+        decode_ok = wram_ext == wram_live
+        captured = schema.parse(wram_live[schema.result_offset:
+                                          schema.result_offset + schema.block_len])
+        runner.stop()
+
+        # --- (b) live injection into a DIFFERENT parked core ---------------
+        runner2, mem2 = new_state_runner()
+        runner2.load_rom(sp.ROM_PATH, run_seconds=0.0)
+        runner2.run_frames(other_frames)
+        before = schema.parse(bytes(runner2.read_bytes(
+            mem2.SnesWorkRam, schema.result_offset, schema.block_len)))
+        # Transplant the decoded architectural WRAM.
+        runner2.write_bytes(mem2.SnesWorkRam, 0, wram_ext)
+        after_block = bytes(runner2.read_bytes(
+            mem2.SnesWorkRam, schema.result_offset, schema.block_len))
+        after = schema.parse(after_block)
+        after_beacon = runner2.read_bytes(
+            mem2.SnesWorkRam, schema.beacon_offset, 1)[0]
+        runner2.stop()
+
+        result["evidence"] = {
+            "capture_frames": baseline_frames,
+            "wram_bytes": len(wram_live),
+            "decode_bytes_match": decode_ok,
+            "captured_audit": {
+                "epoch": captured["beacon_epoch"],
+                "pass_bitmap": hex(captured["domain_pass_bitmap"]),
+                "audit_passed": schema.audit_passed(captured),
+            },
+            "inject_core_epoch_before": before["beacon_epoch"],
+            "inject_core_epoch_after": after["beacon_epoch"],
+            "injected_beacon": hex(after_beacon),
+        }
+        checks = {
+            "decode_matches_ground_truth": decode_ok,
+            "captured_audit_passed": schema.audit_passed(captured),
+            "injection_landed_decoded_wram":
+                after["beacon_epoch"] == captured["beacon_epoch"]
+                and after["domain_pass_bitmap"] == captured["domain_pass_bitmap"]
+                and after["magic"] == b"SPRB",
+            "injection_changed_target":
+                before["beacon_epoch"] != captured["beacon_epoch"],
+            "injected_beacon_present": after_beacon == schema.beacon_value,
+        }
+        result["checks"] = checks
+        result["passed"] = all(checks.values())
+        return result
+    finally:
+        try:
+            if os.path.exists(cap):
+                os.remove(cap)
+            os.rmdir(tmpdir)
+        except OSError:
+            pass
+
+
 def control_c1(baseline_frames: int = 400, advance_frames: int = 150) -> dict:
     """C1 — bsnes native `.bst` round-trips through bsnes.
 
@@ -309,6 +452,7 @@ CONTROLS = {
     "c1": control_c1,
     "c2": control_c2,
     "c3": control_c3,
+    "c4": control_c4,
 }
 
 

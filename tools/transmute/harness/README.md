@@ -14,7 +14,7 @@ BusyBox-constrained, never shipped to a device, `src/**` untouched.
 | `build_bsnes_host.sh` | Builds the pinned bsnes libretro core + compiles `bsnes_host` into `build/` (gitignored) | P1 ✓ |
 | `bst.py` | Python `.bst` container + RLE<1> codec (mirror of the host, byte-verified against it); payload layout incl. the `random.state` internal-field mask | P1 ✓ |
 | `bsnes_runner.py` | Python wrapper over the compiled bsnes host (save / reload / check) | P1 ✓ |
-| `controls.py` | Validity controls C1–C4 CLI. C1/C2/C3 implemented; C4 lands with the first `transmute_snes.c` decode pass | C1/C2/C3 ✓ |
+| `controls.py` | Validity controls C1–C4 CLI. C1/C2/C3 full; C4 first pass (WRAM decode + injection) | C1/C2/C3/C4 ✓ |
 
 ## The bsnes headless runner (P1 build risk — resolved)
 
@@ -53,6 +53,12 @@ python3 tools/transmute/harness/controls.py c2 --json    # full evidence
 python3 tools/transmute/harness/controls.py c2            # checklist
 ```
 
+```sh
+python3 tools/transmute/harness/controls.py c1   # bsnes native round-trip
+python3 tools/transmute/harness/controls.py c3   # corrupted-state rejection
+python3 tools/transmute/harness/controls.py c4   # decode + live re-inject
+```
+
 Exit codes: `0` pass · `1` fail · `77` skip (emulator dependency absent).
 
 The committed gate wrapper `tests/unit/transmute/test_controls_mesen.sh`
@@ -86,3 +92,24 @@ advances frames (beacon epoch ticks up — emulation is live), loads the
 `LoadStateFile`'s bool is unreliable under async apply) with the audit
 still passing and the beacon byte surviving. This proves the source-side
 capture/restore path end-to-end before any transmutation is scored.
+
+## C4 — CMS decode → live re-injection (first pass, WRAM domain)
+
+Isolates "is the architectural decomposition complete?" from "can we
+synthesize bsnes's format?" (spec §method upgrade). This first pass proves
+the two halves of live injection on the WRAM domain:
+
+1. **Decode correctness vs ground truth** — the WRAM the decode oracle
+   (`mss_dump -x memoryManager.workRam`) pulls out of a `.mss` is
+   byte-identical to the live core's WRAM at the instant that `.mss` was
+   captured. The decode recovers exactly what Mesen serialized, tested
+   against Mesen itself.
+2. **Live injection** — that decoded WRAM, written via `write_bytes` into
+   a *different* parked core (which had a different beacon epoch), reads
+   back as the captured state's self-audit (magic + PASS bitmap + beacon).
+
+Full behavioural-continuation C4 (run the injected core, require it to
+match a native load) additionally needs CPU/PPU register injection via
+`SetCpuState`/`SetPpuState` — exports present in the core, not yet bound in
+MesenRunner. That, plus extending the decode to VRAM/CGRAM/OAM/SRAM and
+formalizing it in `transmute_snes.c`, is the P2 entry point.

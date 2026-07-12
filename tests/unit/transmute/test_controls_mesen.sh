@@ -1,13 +1,15 @@
 #!/bin/sh
 # shellcheck shell=ash
-# Spike T2.0 P1: Mesen2-side harness validity controls (C2, later C4).
+# Spike T2.0 P1: Mesen2-side harness validity controls (C2 + C4).
 #
 # Thin gate over the Python control driver
-# (tools/transmute/harness/controls.py). The real work — booting the
-# StateProbe ROM under MesenCore.so, saving a .mss, reloading it, and
-# verifying the self-audit still passes with the beacon epoch rewound —
-# is Python (the Mesen2 harness is Python; spec toolchain note exempts
-# the spike from the BusyBox constraint).
+# (tools/transmute/harness/controls.py). The real work is Python (the
+# Mesen2 harness is Python; spec toolchain note exempts the spike from the
+# BusyBox constraint):
+#   C2 — save a .mss, reload it, verify the StateProbe self-audit still
+#        passes with the beacon epoch rewound.
+#   C4 — decode WRAM out of a .mss (byte-identical to the live core's WRAM
+#        = ground truth), then re-inject it into a different parked core.
 #
 # SKIP-not-FAIL discipline: the Mesen2 half of the harness needs
 # SuperForge's MesenCore.so + SDL2, which the mainline gate host does
@@ -37,23 +39,23 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 TMPDIR="$WORK"; export TMPDIR
 
-rc=0
-python3 "$DRIVER" c2 --frames 600 >"$WORK/c2.out" 2>"$WORK/c2.err" || rc=$?
+run_control() {
+    _id="$1"
+    _rc=0
+    python3 "$DRIVER" "$_id" >"$WORK/$_id.out" 2>"$WORK/$_id.err" || _rc=$?
+    cat "$WORK/$_id.out"
+    case "$_rc" in
+        0)  printf 'PASS: %s\n' "$_id" ;;
+        77) printf 'SKIP: %s — Mesen2 harness unavailable (%s)\n' "$_id" \
+                "$(tail -n1 "$WORK/$_id.err" 2>/dev/null || echo 'no core')" ;;
+        *)  printf 'FAIL: %s (exit %s)\n' "$_id" "$_rc" >&2
+            cat "$WORK/$_id.err" >&2
+            return 1 ;;
+    esac
+    return 0
+}
 
-cat "$WORK/c2.out"
-case "$rc" in
-    0)
-        printf 'PASS: C2 Mesen2 native round-trip\n'
-        exit 0
-        ;;
-    77)
-        printf 'SKIP: C2 — Mesen2 core unavailable (%s)\n' \
-            "$(tail -n1 "$WORK/c2.err" 2>/dev/null || echo 'no core')"
-        exit 0
-        ;;
-    *)
-        printf 'FAIL: C2 Mesen2 native round-trip (exit %s)\n' "$rc" >&2
-        cat "$WORK/c2.err" >&2
-        exit 1
-        ;;
-esac
+rc=0
+run_control c2 || rc=1
+run_control c4 || rc=1
+exit "$rc"

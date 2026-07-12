@@ -8,8 +8,11 @@
 # BusyBox constraint):
 #   C2 — save a .mss, reload it, verify the StateProbe self-audit still
 #        passes with the beacon epoch rewound.
-#   C4 — decode WRAM out of a .mss (byte-identical to the live core's WRAM
-#        = ground truth), then re-inject it into a different parked core.
+#   C4 — full behavioural: decode every architectural domain out of a .mss
+#        (WRAM/VRAM/OAM/CGRAM/SRAM/ARAM byte-exact + CPU field-exact vs the
+#        live core = ground truth), transplant them (+ the PPU register file
+#        via SetPpuState) into a different parked core, and require its
+#        StateProbe continuation to match a native LoadStateFile.
 #
 # SKIP-not-FAIL discipline: the Mesen2 half of the harness needs
 # SuperForge's MesenCore.so + SDL2, which the mainline gate host does

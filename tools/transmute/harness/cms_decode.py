@@ -97,6 +97,72 @@ def extract_domain(mss_dump: str, mss_path: str, key: str) -> bytes:
     return proc.stdout
 
 
+class MesenRecords:
+    """One-shot decode of every keyed record in a ``.mss`` capture.
+
+    ``mss_dump`` (no ``-x``) prints one line per record — ``key\\tsize\\tvalue``
+    for scalars (value as ``0xhex\\tdecimal``), ``key\\tsize\\tcrc32=..`` for
+    byte arrays >8 bytes. Parsing that single dump once gives O(1) access to
+    all ~1300 architectural scalars without a subprocess per field; the six
+    large memory arrays are still pulled via ``mss_dump -x`` on demand (and
+    cached). This is the decode-side surface the P2 register-file encoder
+    consumes; ``transmute_snes.c`` formalizes the same walk for shipping.
+
+    The chip-firewall exit (rc==2) is honoured: a coprocessor capture raises
+    DecodeError here rather than silently transplanting a plain-cart subset.
+    """
+
+    def __init__(self, mss_dump: str, mss_path: str):
+        self.mss_dump = mss_dump
+        self.mss_path = mss_path
+        self._scalars: dict = {}
+        self._arrays: dict = {}
+        proc = subprocess.run(
+            [mss_dump, mss_path], capture_output=True, text=True,
+        )
+        if proc.returncode == 2:
+            raise DecodeError(
+                f"REFUSE: {mss_path} tripped the chip firewall "
+                "(coprocessor/enhancement keys present)"
+            )
+        if proc.returncode != 0:
+            raise DecodeError(
+                f"mss_dump {mss_path} failed (rc={proc.returncode}): "
+                f"{proc.stderr.strip()}"
+            )
+        for line in proc.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3 or not parts[1].isdigit():
+                continue  # header lines ("mss.* = ..") — not records
+            key, size = parts[0], int(parts[1])
+            if parts[2].startswith("0x"):
+                self._scalars[key] = (size, int(parts[3]))
+            # arrays (crc32=..) are pulled by name via .array()
+
+    def has(self, key: str) -> bool:
+        return key in self._scalars
+
+    def u(self, key: str) -> int:
+        """Unsigned integer value of a scalar record (raises if absent)."""
+        rec = self._scalars.get(key)
+        if rec is None:
+            raise DecodeError(f"record not found (or not scalar): {key!r}")
+        return rec[1]
+
+    def size(self, key: str) -> int:
+        rec = self._scalars.get(key)
+        if rec is None:
+            raise DecodeError(f"record not found: {key!r}")
+        return rec[0]
+
+    def array(self, key: str) -> bytes:
+        """Raw bytes of a byte-array record (cached; via mss_dump -x)."""
+        if key not in self._arrays:
+            self._arrays[key] = extract_domain(
+                self.mss_dump, self.mss_path, key)
+        return self._arrays[key]
+
+
 def decode_cpu_state(mss_dump: str, mss_path: str) -> SnesCpuState:
     """Transcode the ``cpu.*`` records of a ``.mss`` into a SnesCpuState.
 

@@ -495,15 +495,23 @@
       "cartridge.has.* inference: stream size != plain-cart dry-run size for the ROM => coprocessor blocks present => refuse (mechanical chip firewall)"
     ]
   },
-  "open_p2_pins": [
-    "OAM raw<->decoded-object bit packing (both PPUs' oamWrite/oamRead) — oracle: StateProbe OAM seed",
-    "SPC timer stage-name crosswalk (SpcTimer<N>::step vs bsnes Timer<Frequency>::step)",
-    "dsp env_mode enum value crosswalk",
-    "dsp.step <-> blob phase unit",
-    "Mesen2 externalRegs vs regs divergence semantics at capture",
-    "bsnes io.irqEnable composite semantics vs Mesen2 enableH/V (donor-check)",
-    "interrupt truth table finalization (StateProbe v3)",
-    "Thread.clock donor values: confirm runToSave parks all threads at clock offsets the donor reproduces (C4 isolates)",
-    "fast-PPU io.oamAddress/oamBaseAddress live-vs-reload split vs Mesen2 oamRamAddress/InternalOamAddress"
-  ]
+  "open_p2_pins": {
+    "_comment": "P2 pin status after Session 5 (register-file transforms; G3 MET, live bsnes re-audit reaches 0x3F8F). resolved_session5 pins were closed empirically against the committed beacon capture + a live bsnes load; remaining pins are not exercised by a StateProbe v0 quiescent capture and await v2/v3 instrumentation.",
+    "resolved_session5": [
+      "SMP mailbox port DIRECTION crosswalk (the G3 unblock): bsnes sfc/smp/io.cpp names are cross-wired vs intuition -- io.apu0-3 is the CPU->SMP latch (CPU writes $2140-43 -> io.apu; SPC reads $F4-F7 -> io.apu), io.cpu0-3 is the SMP->CPU latch (SPC writes -> io.cpu; CPU reads -> io.cpu). Mesen cpuRegs=CPU->SMP, outputReg=SMP->CPU. Correct map: smp.io.apu<-spc.cpuRegs, smp.io.cpu<-spc.outputReg. The intuitive (name-matching) map scrambles the echo handshake into a persistent +1 rolling-count skew that fails domain 11 only. 'names lie, bits don't' (same discipline as the DMA $43x0 crosswalk).",
+      "OAM raw<->decoded-object bit packing: sfc/ppu-fast/object.cpp read/writeObject. Low table 4B/sprite (x-low, y=raw+1 [render-one-line-late], character, attr=vflip<<7|hflip<<6|priority<<4|palette<<1|nameselect); high table 2b/sprite at bit (n%4)*2 = x-bit8, +1 = size. Verified: domain 3 (OAM) passes live.",
+      "fast-PPU io.oamAddress/oamBaseAddress live-vs-reload split: oamBaseAddress<-ppu.oamRamAddress<<1 (reload), oamAddress<-ppu.internalOamAddress (live); both equal 0x198 at the quiescent beacon (no OAM access in flight). Domain 3 passes.",
+      "bsnes io.irqEnable composite vs Mesen enableH/V: Mesen serializes enableNmi/enableHorizontalIrq/enableVerticalIrq/enableAutoJoypadRead pre-unpacked, so nmiEnable/hirqEnable/virqEnable/autoJoypadPoll are direct copies; irqEnable (h|v composite) is 0 at the beacon (both timer IRQs disabled) -- donor-checked 0. Domain 9 (IRQ/NMI cadence) + the WAI resume pass.",
+      "SPC timer stage-name crosswalk: bsnes stream stage0,stage1,stage2,stage3,line,enable,target <- Mesen stage0,stage1,stage2,output(=stage3 4-bit read-to-clear),prevStage1(=line edge memory),enabled,target. Non-gating (domain 6 blind spot) but transplanted; SPC runs correctly.",
+      "Thread.clock donor values: the mailbox result is EMPIRICALLY INSENSITIVE to smp.thread.clock across a wide sweep (the handshake is polling-based). The donor's runToSave sync offsets are a valid mutual configuration; leaving all thread.clocks + dsp.clock at donor values yields a continuable transplant. H4 CPU<->SMP relative phase is not a blocker for a quiescent beacon.",
+      "Mesen externalRegs vs regs: crc-equal at the quiescent beacon (spc.dsp.regs == spc.dsp.externalRegs); the DSP blob uses regs. No divergence to reconcile at capture."
+    ],
+    "remaining": [
+      "dsp env_mode enum value crosswalk (Mesen envMode vs blargg env_mode_t) -- copied low byte; both 0=release/1=attack/2=decay/3=sustain in practice. Domain 5 (DSP) is a v0 audit blind spot, so unverified against the audit; closes with StateProbe v2 (SPC-side DSP checksum).",
+      "dsp.step <-> blob phase sample-cycle unit -- copied verbatim; both count the 32-clock sample cadence. Same v2 dependency as env_mode.",
+      "interrupt truth table finalization (StateProbe v3 cadence audit): quiescent beacon captures carry no NMI/IRQ edge in flight (status.nmi*/irq* = 0 = donor), so the truth-table copy is not exercised; v3 arms H/V IRQ + NMI cadence to validate the edge-pipeline crosswalk.",
+      "SPC mid-instruction captures (spc.opStep != ReadOpCode) and pendingCpuRegUpdate flush: the encoder REFUSES both (transmute_snes.c) rather than reconstruct sub-instruction state the CMS excludes; v2 measures the empirical refuse-rate on APU-stress captures."
+    ]
+  },
+  "_session5_note": "Session 5 (register-file transforms) closed G3: donor-encode of beacon_gen2.mss reaches the full StateProbe pass bitmap 0x3F8F on a LIVE bsnes re-audit (epoch 548->1448 over 900 frames, verified at audit gen>=3). Formalized in tools/transmute/transmute_snes.c (byte-identical to the Python oracle encoder). The one non-obvious blocker was the SMP mailbox port direction (see open_p2_pins.resolved_session5)."
 }
